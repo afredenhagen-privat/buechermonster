@@ -66,7 +66,9 @@ const loanLine = computed(() => {
           {{ STATUS_LABEL[book.status] }}
         </span>
         <StarRating v-if="book.rating" :rating="book.rating" />
-        <span v-if="foreignOwner" class="chip bg-accent-soft text-accent">
+        <!-- Blass und nur umrandet: der Besitzer ist eine Randnotiz, und die
+             Umrandung hält ihn trotzdem von den gefüllten Genre-Chips getrennt. -->
+        <span v-if="foreignOwner" class="chip border border-line bg-transparent">
           Buch von {{ foreignOwner }}
         </span>
         <span v-for="genre in genres.genresOf(book.id)" :key="genre.id" class="chip">

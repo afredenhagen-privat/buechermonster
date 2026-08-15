@@ -19,7 +19,9 @@
     --c-accent-soft: 247 233 225;
     --c-accent-ink: 255 255 255;
     --c-star: 221 154 21;
-    --c-unread: 139 129 119;
+    /* Ungelesen trägt die Akzentfarbe: das ist der Stapel, der noch wartet,
+       und damit die Angabe, die im Regal ins Auge fallen soll. */
+    --c-unread: 180 85 45;
     --c-reading: 47 125 109;
     --c-read: 74 124 63;
     --c-overdue: 192 57 43;
@@ -37,7 +39,7 @@
       --c-accent-soft: 58 36 25;
       --c-accent-ink: 26 18 8;
       --c-star: 232 181 66;
-      --c-unread: 139 129 119;
+      --c-unread: 229 131 79;
       --c-reading: 74 167 147;
       --c-read: 109 168 92;
       --c-overdue: 224 107 92;
