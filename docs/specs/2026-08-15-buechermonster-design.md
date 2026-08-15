@@ -244,7 +244,18 @@ Aktive Filter erscheinen als Chips über der Liste, jeder einzeln wegtippbar.
 
 ### Buchdetail
 
-Tippen auf ein Buch öffnet diese Ansicht. Oben Cover, Titel, Autor. Darunter:
+Tippen auf ein Buch öffnet diese Ansicht. Oben Cover, daneben **Titel, Untertitel und Autor als
+Eingabefelder** — was aus der Buchdatenbank kommt, ist nicht immer richtig. Bei der DNB steht der Reihenname
+gelegentlich im Titel, Übersetzer landen bei den Autoren, und das Jahr meint manchmal die Auflage. Das muss
+korrigierbar sein, ohne das Buch neu anzulegen. Gespeichert wird beim Verlassen des Feldes, ohne
+Bearbeiten-Modus und ohne Speichern-Knopf.
+
+Darunter der Abschnitt **Buchdaten** mit Verlag, Erscheinungsjahr und Seitenzahl, ebenfalls direkt
+editierbar. Das Erscheinungsjahr wird gegen 1450 bis heute+2 geprüft; eine unplausible Eingabe wird abgelehnt
+und das Feld springt auf den alten Wert zurück, statt Unsinn zu speichern. Das Jahr steht zusätzlich im
+Regal hinter dem Autor, weil es bei mehreren Auflagen desselben Titels das Unterscheidungsmerkmal ist.
+
+Dann:
 
 - Status als Dreier-Umschalter (Ungelesen / Lese gerade / Gelesen). Beim Wechsel auf „Gelesen" wird
   `finishedAt` gesetzt.

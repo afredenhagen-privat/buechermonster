@@ -253,6 +253,46 @@ describe('booksStore', () => {
     expect((await db.books.get(book.id))?.titleSort).toBe('känguru-chroniken');
   });
 
+  it('lässt Titel und Erscheinungsjahr nachträglich korrigieren', async () => {
+    // Was die Buchdatenbank liefert, ist nicht immer richtig — der Reihenname
+    // steckt schon mal im Titel, und das Jahr meint die Auflage.
+    const books = useBooksStore();
+    const book = await books.create({
+      title: 'Tintenherz (Tintenwelt 1)',
+      authors: ['Cornelia Funke', 'Martina Petersen'],
+      publishedYear: 2011,
+    });
+
+    await books.update(book.id, {
+      title: 'Tintenherz',
+      authors: ['Cornelia Funke'],
+      publishedYear: 2003,
+      publisher: 'Dressler',
+      pageCount: 573,
+    });
+
+    const stored = await db.books.get(book.id);
+    expect(stored).toMatchObject({
+      title: 'Tintenherz',
+      titleSort: 'tintenherz',
+      authors: ['Cornelia Funke'],
+      authorSort: 'funke, cornelia',
+      publishedYear: 2003,
+      publisher: 'Dressler',
+      pageCount: 573,
+    });
+  });
+
+  it('nimmt ein geleertes Erscheinungsjahr als "unbekannt" an', async () => {
+    const books = useBooksStore();
+    const book = await books.create({ title: 'X', publishedYear: 2003 });
+
+    await books.update(book.id, { publishedYear: null, pageCount: null });
+
+    expect(books.byId(book.id)?.publishedYear).toBeNull();
+    expect((await db.books.get(book.id))?.publishedYear).toBeNull();
+  });
+
   it('setzt das Lesedatum beim Statuswechsel und räumt es wieder weg', async () => {
     const books = useBooksStore();
     const book = await books.create({ title: 'Verity' });

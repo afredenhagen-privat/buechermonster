@@ -29,6 +29,98 @@ const STATUS_CLASS = {
   read: 'text-read',
 } as const;
 
+/* --- Buchdaten: direkt im Feld bearbeiten, beim Verlassen speichern ---
+   Die Angaben aus der Buchdatenbank sind nicht immer richtig: bei der DNB
+   steht der Reihenname manchmal im Titel, Übersetzer landen gelegentlich
+   bei den Autoren, und Auflage und Erscheinungsjahr gehen durcheinander.
+   Alles davon muss korrigierbar sein, ohne das Buch neu anzulegen. */
+const details = ref({
+  title: '',
+  subtitle: '',
+  authors: '',
+  publisher: '',
+  publishedYear: '',
+  pageCount: '',
+});
+
+watch(
+  book,
+  (value) => {
+    if (!value) return;
+    details.value = {
+      title: value.title,
+      subtitle: value.subtitle ?? '',
+      authors: value.authors.join(', '),
+      publisher: value.publisher ?? '',
+      publishedYear: value.publishedYear === null ? '' : String(value.publishedYear),
+      pageCount: value.pageCount === null ? '' : String(value.pageCount),
+    };
+  },
+  { immediate: true },
+);
+
+async function saveDetails() {
+  const current = book.value;
+  if (!current) return;
+
+  const patch: Record<string, unknown> = {};
+
+  const title = details.value.title.trim();
+  if (!title) {
+    details.value.title = current.title;
+    showError(new Error('Ohne Titel geht es nicht.'));
+    return;
+  }
+  if (title !== current.title) patch.title = title;
+
+  const subtitle = details.value.subtitle.trim() || null;
+  if (subtitle !== current.subtitle) patch.subtitle = subtitle;
+
+  const authors = details.value.authors.split(',').map((a) => a.trim()).filter(Boolean);
+  if (authors.join('|') !== current.authors.join('|')) patch.authors = authors;
+
+  const publisher = details.value.publisher.trim() || null;
+  if (publisher !== current.publisher) patch.publisher = publisher;
+
+  const year = parseYear(details.value.publishedYear);
+  if (year === 'ungültig') {
+    details.value.publishedYear = current.publishedYear === null ? '' : String(current.publishedYear);
+    showError(new Error('Das Erscheinungsjahr sieht nicht nach einer Jahreszahl aus.'));
+    return;
+  }
+  if (year !== current.publishedYear) patch.publishedYear = year;
+
+  const pages = parseCount(details.value.pageCount);
+  if (pages !== current.pageCount) patch.pageCount = pages;
+
+  if (Object.keys(patch).length === 0) return;
+
+  try {
+    await books.update(current.id, patch);
+    show('Gespeichert');
+  } catch (error) {
+    showError(error);
+  }
+}
+
+function parseYear(raw: string): number | null | 'ungültig' {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const value = Number(trimmed);
+  // Gutenberg nach unten, ein bisschen Luft nach oben für Vorabdrucke.
+  if (!Number.isInteger(value) || value < 1450 || value > new Date().getFullYear() + 2) {
+    return 'ungültig';
+  }
+  return value;
+}
+
+function parseCount(raw: string): number | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const value = Number(trimmed);
+  return Number.isInteger(value) && value > 0 ? value : null;
+}
+
 /* --- Notizen: lokal tippen, beim Verlassen des Feldes speichern --- */
 const notes = ref('');
 watch(book, (value) => { notes.value = value?.notes ?? ''; }, { immediate: true });
@@ -142,21 +234,66 @@ async function removeBook() {
       ← Zurück
     </button>
 
-    <div class="mb-5 flex gap-3.5">
+    <div class="mb-4 flex gap-3.5">
       <BookCover :title="book.title" :src="book.coverDataUrl" size="lg" />
-      <div class="min-w-0">
-        <h2 class="font-title text-xl font-bold leading-tight">{{ book.title }}</h2>
-        <p v-if="book.subtitle" class="mt-1 text-sm italic text-muted">{{ book.subtitle }}</p>
-        <p class="mt-1.5 text-sm text-muted">{{ book.authors.join(', ') || 'Ohne Autor' }}</p>
-        <p class="mt-2 text-xs leading-relaxed text-muted">
-          <template v-if="book.publisher">{{ book.publisher }}<br /></template>
-          <template v-if="book.publishedYear">{{ book.publishedYear }}</template>
-          <template v-if="book.publishedYear && book.pageCount"> · </template>
-          <template v-if="book.pageCount">{{ book.pageCount }} Seiten</template>
-          <template v-if="book.isbn13"><br />ISBN {{ book.isbn13 }}</template>
-        </p>
+      <div class="min-w-0 flex-1">
+        <input
+          v-model="details.title"
+          class="w-full rounded-md bg-transparent font-title text-xl font-bold leading-tight outline-none focus:bg-surface2 focus:px-1.5 focus:py-1"
+          aria-label="Titel"
+          @blur="saveDetails"
+          @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
+        />
+        <input
+          v-model="details.subtitle"
+          class="mt-1 w-full rounded-md bg-transparent text-sm italic text-muted outline-none placeholder-muted/60 focus:bg-surface2 focus:px-1.5 focus:py-1"
+          placeholder="Untertitel"
+          aria-label="Untertitel"
+          @blur="saveDetails"
+          @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
+        />
+        <input
+          v-model="details.authors"
+          class="mt-1 w-full rounded-md bg-transparent text-sm text-muted outline-none placeholder-muted/60 focus:bg-surface2 focus:px-1.5 focus:py-1"
+          placeholder="Autor, weiterer Autor"
+          aria-label="Autoren"
+          @blur="saveDetails"
+          @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
+        />
       </div>
     </div>
+
+    <section class="mb-5">
+      <span class="label">Buchdaten</span>
+      <div class="grid grid-cols-[1fr_5rem] gap-2">
+        <input
+          v-model="details.publisher"
+          class="input col-span-2"
+          placeholder="Verlag"
+          aria-label="Verlag"
+          @blur="saveDetails"
+        />
+        <input
+          v-model="details.publishedYear"
+          class="input"
+          inputmode="numeric"
+          placeholder="Erscheinungsjahr"
+          aria-label="Erscheinungsjahr"
+          @blur="saveDetails"
+        />
+        <input
+          v-model="details.pageCount"
+          class="input"
+          inputmode="numeric"
+          placeholder="Seiten"
+          aria-label="Seitenzahl"
+          @blur="saveDetails"
+        />
+      </div>
+      <p v-if="book.isbn13 || book.isbn10" class="mt-1.5 text-xs text-muted">
+        ISBN {{ book.isbn13 ?? book.isbn10 }}
+      </p>
+    </section>
 
     <section class="mb-5">
       <span class="label">Status</span>

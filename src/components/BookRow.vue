@@ -54,7 +54,10 @@ const loanLine = computed(() => {
 
     <div class="min-w-0 flex-1">
       <div class="font-title text-[15px] font-semibold leading-tight">{{ book.title }}</div>
-      <div class="mt-0.5 text-[13px] text-muted">{{ book.authors.join(', ') || 'Ohne Autor' }}</div>
+      <div class="mt-0.5 text-[13px] text-muted">
+        {{ book.authors.join(', ') || 'Ohne Autor' }}
+        <template v-if="book.publishedYear"> · {{ book.publishedYear }}</template>
+      </div>
       <div v-if="seriesLine" class="mt-0.5 text-xs italic text-muted">{{ seriesLine }}</div>
 
       <div class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
