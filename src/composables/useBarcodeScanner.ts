@@ -1,68 +1,111 @@
 import { ref, shallowRef } from 'vue';
+import { createDecoder, type Decoder } from '@/services/barcodeDecoder';
 
 /**
- * Barcode-Erkennung mit zwei Wegen:
+ * Live-Scannen über die Kamera.
  *
- *  1. Die native BarcodeDetector-API. Android Chrome kann das ohne
- *     Zusatzcode und ohne Download.
- *  2. @zxing/browser, erst bei Bedarf nachgeladen — der Weg für iOS-Safari,
- *     wo es die native API nicht gibt.
+ * Auf Android steckt hinter der Erkennung ML Kit, also dasselbe wie in guten
+ * Scanner-Apps. Wenn ein Strichcode trotzdem nicht gelesen wird, liegt es fast
+ * nie an der Erkennung, sondern am Bild — deshalb dreht sich hier das meiste
+ * um die Kamera und nicht um den Decoder:
  *
- * Drei Dinge, an denen ein Scanner sonst still scheitert:
- *
- *  - **Formatliste.** Die API kennt nur die Formate aus der Spezifikation.
- *    Ein erfundener Eintrag wie 'isbn' lässt schon den Konstruktor werfen,
- *    und dann läuft die Kamera, ohne je etwas zu erkennen. Deshalb wird
- *    zusätzlich gegen getSupportedFormats() abgeglichen.
- *  - **Autofokus.** Ohne 'continuous' stellt ein Handy auf Nahdistanz nicht
- *    scharf. Ein unscharfer Strichcode wird nie erkannt.
- *  - **Auflösung.** Bei 640×480 sind die schmalen Striche eines EAN-13
- *    schlicht zu wenige Pixel.
+ *  - **Objektiv.** Chrome nimmt bei `facingMode: environment` irgendeine
+ *    Rückkamera. Erwischt es die Ultraweitwinkel- oder Tele-Linse, hat die oft
+ *    Fixfokus oder eine Naheinstellgrenze von 20 cm und wird nie scharf.
+ *    Deshalb lassen sich alle Kameras auflisten und durchschalten.
+ *  - **Fokus.** `focusMode: 'continuous'` beim Start, dazu Antippen fürs
+ *    Nachfokussieren.
+ *  - **Zoom.** Die meisten Handys stellen unter 10 cm gar nicht scharf. Weiter
+ *    weg gehen und hineinzoomen schlägt näher rangehen.
+ *  - **Auflösung.** Bei 640×480 hat ein EAN-13 zu wenige Pixel pro Strich.
  */
 
-export type ScannerEngine = 'native' | 'zxing' | null;
+export interface CameraOption {
+  deviceId: string;
+  label: string;
+}
 
-/** Buchrücken tragen EAN-13; UPC ist bei Importen gelegentlich dabei. */
-const WANTED_FORMATS = ['ean_13', 'ean_8', 'upc_a', 'upc_e'];
+export interface ScannerDiagnostics {
+  engine: string;
+  formats: string[];
+  resolution: string;
+  cameraLabel: string;
+  focusModes: string[];
+  zoomRange: string;
+  torch: boolean;
+  cameraCount: number;
+}
 
 export function useBarcodeScanner() {
   const running = ref(false);
-  const engine = ref<ScannerEngine>(null);
   const error = ref('');
+  const cameras = ref<CameraOption[]>([]);
+  const activeCameraId = ref<string | null>(null);
+
   const torchAvailable = ref(false);
   const torchOn = ref(false);
+  const zoomAvailable = ref(false);
+  const zoom = ref(1);
+  const zoomRange = ref({ min: 1, max: 1, step: 0.1 });
+  const diagnostics = ref<ScannerDiagnostics | null>(null);
 
   const stream = shallowRef<MediaStream | null>(null);
   const track = shallowRef<MediaStreamTrack | null>(null);
-  const zxingControls = shallowRef<{ stop: () => void } | null>(null);
   let frameHandle: number | null = null;
   let stopped = true;
 
-  async function start(video: HTMLVideoElement, onDetect: (code: string) => void) {
+  /**
+   * Namen bekommt man erst, nachdem die Kamera einmal freigegeben wurde —
+   * vorher liefert der Browser leere Labels.
+   */
+  async function listCameras(): Promise<CameraOption[]> {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      cameras.value = devices
+        .filter((d) => d.kind === 'videoinput')
+        .map((d, index) => ({
+          deviceId: d.deviceId,
+          label: d.label || `Kamera ${index + 1}`,
+        }));
+    } catch {
+      cameras.value = [];
+    }
+    return cameras.value;
+  }
+
+  async function start(
+    video: HTMLVideoElement,
+    onDetect: (code: string) => void,
+    deviceId?: string,
+  ) {
     error.value = '';
-    if (running.value) return;
+    if (running.value) stop();
 
     if (!navigator.mediaDevices?.getUserMedia) {
       error.value = 'Dieser Browser gibt keinen Zugriff auf die Kamera.';
       return;
     }
 
+    const constraints: MediaTrackConstraints = deviceId
+      ? { deviceId: { exact: deviceId } }
+      : { facingMode: { ideal: 'environment' } };
+
     try {
       stream.value = await navigator.mediaDevices.getUserMedia({
         video: {
-          facingMode: { ideal: 'environment' },
+          ...constraints,
           width: { ideal: 1920 },
           height: { ideal: 1080 },
-          // Wird best-effort angewandt; unbekannte Optionen ignoriert der
-          // Browser, ohne den Stream scheitern zu lassen.
+          // Best-effort: unbekannte Optionen ignoriert der Browser, ohne den
+          // Stream scheitern zu lassen.
           advanced: [{ focusMode: 'continuous' } as MediaTrackConstraintSet],
         },
         audio: false,
       });
 
       track.value = stream.value.getVideoTracks()[0] ?? null;
-      torchAvailable.value =
-        (track.value?.getCapabilities?.() as { torch?: boolean } | undefined)?.torch === true;
+      activeCameraId.value = track.value?.getSettings().deviceId ?? deviceId ?? null;
+      readCapabilities();
 
       video.srcObject = stream.value;
       await video.play();
@@ -73,39 +116,30 @@ export function useBarcodeScanner() {
       return;
     }
 
-    const detector = await createNativeDetector();
-    if (detector) {
-      engine.value = 'native';
-      scanLoop(detector, video, onDetect);
-    } else {
-      engine.value = 'zxing';
-      await runZxing(video, onDetect);
-    }
+    await listCameras();
+
+    const { decoder, info } = await createDecoder();
+    diagnostics.value = {
+      engine: info.engine,
+      formats: info.formats,
+      resolution: describeResolution(),
+      cameraLabel: track.value?.label || 'unbekannt',
+      focusModes: capabilities().focusMode ?? [],
+      zoomRange: zoomAvailable.value
+        ? `${zoomRange.value.min}–${zoomRange.value.max}`
+        : 'nicht steuerbar',
+      torch: torchAvailable.value,
+      cameraCount: cameras.value.length,
+    };
+
+    scanLoop(decoder, video, onDetect);
   }
 
-  /** Gibt null zurück, wenn die native API fehlt oder sich nicht einrichten lässt. */
-  async function createNativeDetector(): Promise<BarcodeDetector | null> {
-    if (!('BarcodeDetector' in window) || !window.BarcodeDetector) return null;
-
-    try {
-      const supported = await window.BarcodeDetector.getSupportedFormats();
-      const formats = WANTED_FORMATS.filter((f) => supported.includes(f));
-      if (formats.length === 0) return null;
-      return new window.BarcodeDetector({ formats });
-    } catch {
-      return null;
-    }
-  }
-
-  function scanLoop(
-    detector: BarcodeDetector,
-    video: HTMLVideoElement,
-    onDetect: (code: string) => void,
-  ) {
+  function scanLoop(decoder: Decoder, video: HTMLVideoElement, onDetect: (code: string) => void) {
     const tick = async () => {
       if (stopped) return;
       try {
-        const codes = await detector.detect(video);
+        const codes = await decoder.detect(video);
         const code = codes[0]?.rawValue;
         if (code) {
           navigator.vibrate?.(120);
@@ -121,21 +155,49 @@ export function useBarcodeScanner() {
     void tick();
   }
 
-  async function runZxing(video: HTMLVideoElement, onDetect: (code: string) => void) {
+  function capabilities(): MediaTrackCapabilities & {
+    torch?: boolean;
+    zoom?: { min: number; max: number; step: number };
+    focusMode?: string[];
+  } {
+    return track.value?.getCapabilities?.() ?? {};
+  }
+
+  function readCapabilities() {
+    const caps = capabilities();
+
+    torchAvailable.value = caps.torch === true;
+    torchOn.value = false;
+
+    if (caps.zoom) {
+      zoomAvailable.value = caps.zoom.max > caps.zoom.min;
+      zoomRange.value = {
+        min: caps.zoom.min,
+        max: caps.zoom.max,
+        step: caps.zoom.step || 0.1,
+      };
+      zoom.value = (track.value?.getSettings() as { zoom?: number } | undefined)?.zoom ?? caps.zoom.min;
+    } else {
+      zoomAvailable.value = false;
+    }
+  }
+
+  function describeResolution(): string {
+    const settings = track.value?.getSettings();
+    return settings?.width && settings.height
+      ? `${settings.width}×${settings.height}`
+      : 'unbekannt';
+  }
+
+  async function setZoom(value: number) {
+    if (!track.value || !zoomAvailable.value) return;
+    zoom.value = value;
     try {
-      const { BrowserMultiFormatReader } = await import('@zxing/browser');
-      const reader = new BrowserMultiFormatReader();
-      zxingControls.value = await reader.decodeFromVideoElement(video, (result) => {
-        const text = result?.getText();
-        if (text && !stopped) {
-          navigator.vibrate?.(120);
-          stopped = true;
-          onDetect(text);
-        }
+      await track.value.applyConstraints({
+        advanced: [{ zoom: value } as MediaTrackConstraintSet],
       });
     } catch {
-      error.value = 'Die Barcode-Erkennung ließ sich nicht laden. Bitte die ISBN eintippen.';
-      stop();
+      // Manche Geräte melden Zoom, lassen ihn aber nicht setzen.
     }
   }
 
@@ -151,18 +213,47 @@ export function useBarcodeScanner() {
     }
   }
 
+  /**
+   * Antippen zum Scharfstellen. Wo der Browser das nicht anbietet, wird
+   * ersatzweise der Dauerfokus neu angestoßen — das reicht auf vielen Geräten,
+   * um eine neue Fokussuche auszulösen.
+   */
+  async function refocus(x?: number, y?: number) {
+    const current = track.value;
+    if (!current) return;
+
+    const modes = capabilities().focusMode ?? [];
+    try {
+      if (x !== undefined && y !== undefined && modes.includes('single-shot')) {
+        await current.applyConstraints({
+          advanced: [
+            { focusMode: 'single-shot', pointsOfInterest: [{ x, y }] } as MediaTrackConstraintSet,
+          ],
+        });
+        return;
+      }
+      if (modes.includes('continuous')) {
+        await current.applyConstraints({
+          advanced: [{ focusMode: 'manual' } as MediaTrackConstraintSet],
+        });
+        await current.applyConstraints({
+          advanced: [{ focusMode: 'continuous' } as MediaTrackConstraintSet],
+        });
+      }
+    } catch {
+      // Fokussteuerung ist auf vielen Geräten nicht verfügbar.
+    }
+  }
+
   function stop() {
     stopped = true;
     running.value = false;
     torchOn.value = false;
-    torchAvailable.value = false;
 
     if (frameHandle !== null) {
       cancelAnimationFrame(frameHandle);
       frameHandle = null;
     }
-    zxingControls.value?.stop();
-    zxingControls.value = null;
 
     // Ohne das bleibt die Kameraleuchte an, auch wenn die Ansicht längst weg ist.
     for (const t of stream.value?.getTracks() ?? []) t.stop();
@@ -170,5 +261,22 @@ export function useBarcodeScanner() {
     track.value = null;
   }
 
-  return { running, engine, error, torchAvailable, torchOn, start, stop, toggleTorch };
+  return {
+    running,
+    error,
+    cameras,
+    activeCameraId,
+    torchAvailable,
+    torchOn,
+    zoomAvailable,
+    zoom,
+    zoomRange,
+    diagnostics,
+    listCameras,
+    start,
+    stop,
+    setZoom,
+    toggleTorch,
+    refocus,
+  };
 }

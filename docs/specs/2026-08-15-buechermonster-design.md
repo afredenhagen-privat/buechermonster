@@ -130,6 +130,32 @@ Drei Wege, alle enden im selben Bearbeiten-Formular, bevor gespeichert wird:
    Ein gescannter EAN-13 wird zusätzlich auf den Bereich 978/979 geprüft. Produkt-Barcodes rechnen die
    Prüfziffer identisch — ohne diese Prüfung würde eine Shampooflasche als ISBN durchgehen und die App
    nur „nicht gefunden" melden, statt zu sagen, dass das kein Buch ist.
+
+   **Nachtrag, nachdem es damit immer noch nicht lief:** Das Format war nur die halbe Wahrheit. Ein Test
+   mit selbst erzeugten EAN-13-Bildern zeigt, dass die Erkennung scharfe, kleine und leicht unscharfe Codes
+   in 36–160 ms liest und erst bei starker Unschärfe aussteigt. Das Problem ist also das Kamerabild, nicht
+   der Decoder — auf Android steckt hinter der nativen API ohnehin Googles ML Kit, dieselbe Erkennung wie
+   in guten Scanner-Apps. Daraus folgen vier Maßnahmen:
+
+   - **Foto statt Live-Bild.** Ein `<input type="file" accept="image/*" capture="environment">` öffnet die
+     Kamera-App des Systems. Die stellt selbst scharf, mit Autofokus und Makro, und liefert ein Standbild,
+     das die Live-Ansicht nicht erreicht. Das ist der zuverlässigste Weg und deshalb gleichwertig neben dem
+     Scannen platziert, nicht als Notlösung versteckt.
+   - **Objektivwahl.** Bei `facingMode: environment` nimmt Chrome irgendeine Rückkamera. Erwischt es die
+     Ultraweitwinkel- oder Telelinse, hat die oft Fixfokus oder eine Naheinstellgrenze von 20 cm. Alle
+     Kameras werden aufgelistet und lassen sich durchschalten.
+   - **Zoom.** Die meisten Handys stellen unter 10 cm gar nicht scharf. Weiter weg gehen und hineinzoomen
+     ist der richtige Weg, nicht näher rangehen.
+   - **Antippen zum Scharfstellen**, mit `pointsOfInterest` wo unterstützt, sonst durch Neuanstoßen des
+     Dauerfokus.
+
+   Dazu eine ausklappbare Diagnose in der Ansicht: Erkennungsart, Formate, Auflösung, Objektivname, Zahl der
+   Kameras, Fokusmodi, Zoombereich, Licht. Ohne die lässt sich aus der Ferne nicht beurteilen, woran es auf
+   einem konkreten Gerät scheitert.
+
+   Als Decoder ersetzt **ZXing-C++ als WebAssembly** (über `barcode-detector`) den früheren
+   TypeScript-Port von ZXing — der ist von den freien Erkennern der schwächste. Die 1 MB WebAssembly werden
+   erst geladen, wenn die native Erkennung fehlt oder nichts findet.
 2. **ISBN eintippen.** 10 oder 13 Stellen, Prüfziffer wird lokal validiert, bevor überhaupt eine
    Abfrage rausgeht.
 3. **Komplett manuell.** Für alte Bücher ohne ISBN.

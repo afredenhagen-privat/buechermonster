@@ -13,7 +13,7 @@
     "icons": "node scripts/gen-icons.mjs"
   },
   "dependencies": {
-    "@zxing/browser": "^0.2.1",
+    "barcode-detector": "^3.2.1",
     "dexie": "^4.4.5",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",

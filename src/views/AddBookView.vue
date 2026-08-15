@@ -12,6 +12,7 @@ import {
   fetchCoverDataUrl,
   lookupIsbn,
 } from '@/services/bookLookup';
+import { decodeImageFile } from '@/services/barcodeDecoder';
 import { mapCategories } from '@/services/genreMapping';
 import { parseSeries } from '@/services/seriesParser';
 import { isBookBarcode, isValidIsbn, splitIsbn } from '@/services/isbn';
@@ -25,13 +26,14 @@ const { show, showError } = useToast();
 
 const scanner = useBarcodeScanner();
 const videoRef = useTemplateRef<HTMLVideoElement>('video');
+const photoInput = useTemplateRef<HTMLInputElement>('photoInput');
 
 const isbnInput = ref('');
 const busy = ref(false);
 const statusLine = ref('');
 const suggestedGenres = ref<string[]>([]);
+const showDiagnostics = ref(false);
 
-/* Das Formular ist immer die letzte Instanz — nichts wird ungeprüft gespeichert. */
 const form = ref({
   open: false,
   title: '',
@@ -53,6 +55,8 @@ const form = ref({
 
 const duplicate = computed(() => books.byIsbn13(form.value.isbn13));
 
+/* ---------------- Kamera ---------------- */
+
 async function toggleCamera() {
   if (scanner.running.value) {
     scanner.stop();
@@ -60,23 +64,70 @@ async function toggleCamera() {
   }
   const video = videoRef.value;
   if (!video) return;
+  await scanner.start(video, onCode);
+}
 
-  await scanner.start(video, (code) => {
-    scanner.stop();
-    isbnInput.value = code;
+async function switchCamera(deviceId: string) {
+  const video = videoRef.value;
+  if (!video) return;
+  await scanner.start(video, onCode, deviceId);
+}
 
-    // Ein EAN-13 von einer Shampooflasche hat dieselbe Prüfziffernrechnung
-    // wie eine ISBN — ohne diese Unterscheidung liefe die Suche ins Leere,
-    // und die Meldung wäre "nicht gefunden" statt "das ist kein Buch".
-    if (!isBookBarcode(code)) {
-      show(`${code} ist kein Buch-Barcode. Buch-Codes fangen mit 978 oder 979 an.`);
-      return;
-    }
-    void search();
-  });
+/** Antippen des Bildes stellt neu scharf — wie in der Kamera-App. */
+async function tapToFocus(event: MouseEvent) {
+  const target = event.currentTarget as HTMLElement;
+  const rect = target.getBoundingClientRect();
+  await scanner.refocus((event.clientX - rect.left) / rect.width, (event.clientY - rect.top) / rect.height);
+}
+
+function onCode(code: string) {
+  scanner.stop();
+  isbnInput.value = code;
+
+  // Ein EAN-13 von einer Shampooflasche hat dieselbe Prüfziffernrechnung wie
+  // eine ISBN — ohne diese Unterscheidung liefe die Suche ins Leere, und die
+  // Meldung wäre "nicht gefunden" statt "das ist kein Buch".
+  if (!isBookBarcode(code)) {
+    show(`${code} ist kein Buch-Barcode. Buch-Codes fangen mit 978 oder 979 an.`);
+    return;
+  }
+  void search();
 }
 
 onBeforeUnmount(() => scanner.stop());
+
+/* ---------------- Foto statt Live-Bild ---------------- */
+
+/**
+ * Der zuverlässigste Weg auf den meisten Handys: die Kamera-App des Systems
+ * macht das Foto und stellt dabei selbst scharf — mit Autofokus, Makro und
+ * allem, was der Browser über getUserMedia nur eingeschränkt steuern kann.
+ * Ausgewertet wird das fertige Standbild.
+ */
+async function onPhoto(event: Event) {
+  const file = (event.target as HTMLInputElement).files?.[0];
+  if (!file) return;
+
+  busy.value = true;
+  statusLine.value = 'Foto wird ausgewertet…';
+  try {
+    const code = await decodeImageFile(file);
+    if (!code) {
+      statusLine.value = '';
+      show('Auf dem Foto war kein Barcode zu erkennen. Näher ran und nochmal, oder ISBN eintippen.');
+      return;
+    }
+    onCode(code);
+  } catch {
+    statusLine.value = '';
+    show('Das Foto ließ sich nicht auswerten.');
+  } finally {
+    busy.value = false;
+    if (photoInput.value) photoInput.value.value = '';
+  }
+}
+
+/* ---------------- Suche ---------------- */
 
 async function search() {
   const raw = isbnInput.value.trim();
@@ -172,9 +223,7 @@ function prefillManual(raw?: string) {
 
 function toggleGenre(id: number) {
   const current = form.value.genreIds;
-  form.value.genreIds = current.includes(id)
-    ? current.filter((g) => g !== id)
-    : [...current, id];
+  form.value.genreIds = current.includes(id) ? current.filter((g) => g !== id) : [...current, id];
 }
 
 async function acceptSuggestion(name: string) {
@@ -239,9 +288,18 @@ function reset() {
   <div class="px-4 pb-8 pt-3">
     <!-- Kamera -->
     <div class="relative mb-3 aspect-[4/3] overflow-hidden rounded-2xl bg-black">
-      <video ref="video" class="h-full w-full object-cover" muted playsinline />
+      <video
+        ref="video"
+        class="h-full w-full object-cover"
+        muted
+        playsinline
+        @click="tapToFocus"
+      />
 
-      <div v-if="!scanner.running.value" class="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center">
+      <div
+        v-if="!scanner.running.value"
+        class="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center"
+      >
         <span class="text-4xl" aria-hidden="true">📷</span>
         <p class="px-6 text-xs text-white/70">
           Barcode auf dem Buchrücken scannen — die Kamera braucht eine https-Adresse.
@@ -252,7 +310,7 @@ function reset() {
         <div class="pointer-events-none absolute inset-0">
           <div class="absolute left-[13%] right-[13%] top-[28%] h-[44%] rounded-lg border-2 border-accent" />
           <p class="absolute inset-x-0 bottom-3 text-center text-xs text-white/80">
-            Barcode auf dem Buchrücken ins Feld halten
+            Zum Scharfstellen aufs Bild tippen
           </p>
         </div>
 
@@ -262,20 +320,72 @@ function reset() {
           class="absolute right-3 top-3 rounded-full px-3 py-1.5 text-sm"
           :class="scanner.torchOn.value ? 'bg-star text-black' : 'bg-black/60 text-white'"
           :aria-label="scanner.torchOn.value ? 'Licht aus' : 'Licht an'"
-          @click="scanner.toggleTorch()"
+          @click.stop="scanner.toggleTorch()"
         >
           💡
         </button>
       </template>
     </div>
 
+    <!-- Zoom: hilft mehr als näher rangehen, weil Handys unter 10 cm nicht scharfstellen -->
+    <div v-if="scanner.running.value && scanner.zoomAvailable.value" class="mb-3">
+      <label class="mb-1 block text-xs text-muted" for="zoom">
+        Zoom — weiter weg halten und heranzoomen wird schärfer als nah ran
+      </label>
+      <input
+        id="zoom"
+        type="range"
+        class="w-full accent-accent"
+        :min="scanner.zoomRange.value.min"
+        :max="scanner.zoomRange.value.max"
+        :step="scanner.zoomRange.value.step"
+        :value="scanner.zoom.value"
+        @input="scanner.setZoom(Number(($event.target as HTMLInputElement).value))"
+      />
+    </div>
+
     <button type="button" class="btn-primary w-full" :disabled="busy" @click="toggleCamera">
       {{ scanner.running.value ? 'Kamera aus' : 'Kamera an und scannen' }}
     </button>
+
+    <!-- Objektivwahl: Chrome erwischt oft eine Linse mit Fixfokus -->
+    <div v-if="scanner.running.value && scanner.cameras.value.length > 1" class="mt-2">
+      <label class="mb-1 block text-xs text-muted" for="kamera">
+        Falls es nicht scharf wird: andere Linse probieren
+      </label>
+      <select
+        id="kamera"
+        class="input"
+        :value="scanner.activeCameraId.value ?? ''"
+        @change="switchCamera(($event.target as HTMLSelectElement).value)"
+      >
+        <option v-for="cam in scanner.cameras.value" :key="cam.deviceId" :value="cam.deviceId">
+          {{ cam.label }}
+        </option>
+      </select>
+    </div>
+
     <p v-if="scanner.error.value" class="mt-2 text-xs text-overdue">{{ scanner.error.value }}</p>
-    <p v-else-if="scanner.engine.value === 'zxing'" class="mt-2 text-xs text-muted">
-      Dein Browser kann Barcodes nicht selbst erkennen, deshalb läuft eine nachgeladene Erkennung.
-      Die ist langsamer — wenn es nicht anspringt, tipp die ISBN einfach ein.
+
+    <!-- Foto über die Kamera-App -->
+    <div class="my-4 flex items-center gap-2.5 text-xs text-muted">
+      <span class="h-px flex-1 bg-line" />oder ein Foto machen<span class="h-px flex-1 bg-line" />
+    </div>
+
+    <input
+      ref="photoInput"
+      type="file"
+      accept="image/*"
+      capture="environment"
+      class="hidden"
+      @change="onPhoto"
+    />
+    <button type="button" class="btn-ghost w-full" :disabled="busy" @click="photoInput?.click()">
+      📸 Foto vom Barcode machen
+    </button>
+    <p class="mt-1.5 text-xs text-muted">
+      Öffnet die Kamera-App deines Handys. Die stellt selbst scharf und liefert ein deutlich besseres
+      Bild als die Live-Ansicht — wenn das Scannen hakt, ist das der zuverlässigere Weg.
     </p>
 
     <!-- ISBN eintippen -->
@@ -301,6 +411,38 @@ function reset() {
     <button type="button" class="btn-ghost w-full" @click="prefillManual()">
       Buch von Hand anlegen
     </button>
+
+    <!-- Diagnose -->
+    <div v-if="scanner.diagnostics.value" class="mt-4">
+      <button
+        type="button"
+        class="text-xs text-muted underline"
+        @click="showDiagnostics = !showDiagnostics"
+      >
+        {{ showDiagnostics ? 'Technische Angaben ausblenden' : 'Was kann meine Kamera?' }}
+      </button>
+      <dl
+        v-if="showDiagnostics"
+        class="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded-lg bg-surface2 p-3 text-[11px] text-muted"
+      >
+        <dt class="font-semibold">Erkennung</dt>
+        <dd>{{ scanner.diagnostics.value.engine }}</dd>
+        <dt class="font-semibold">Formate</dt>
+        <dd>{{ scanner.diagnostics.value.formats.join(', ') || '—' }}</dd>
+        <dt class="font-semibold">Auflösung</dt>
+        <dd>{{ scanner.diagnostics.value.resolution }}</dd>
+        <dt class="font-semibold">Objektiv</dt>
+        <dd>{{ scanner.diagnostics.value.cameraLabel }}</dd>
+        <dt class="font-semibold">Kameras</dt>
+        <dd>{{ scanner.diagnostics.value.cameraCount }}</dd>
+        <dt class="font-semibold">Fokus</dt>
+        <dd>{{ scanner.diagnostics.value.focusModes.join(', ') || 'nicht steuerbar' }}</dd>
+        <dt class="font-semibold">Zoom</dt>
+        <dd>{{ scanner.diagnostics.value.zoomRange }}</dd>
+        <dt class="font-semibold">Licht</dt>
+        <dd>{{ scanner.diagnostics.value.torch ? 'steuerbar' : 'nicht steuerbar' }}</dd>
+      </dl>
+    </div>
 
     <!-- Formular -->
     <div v-if="form.open" class="mt-6 border-t border-line pt-5">
