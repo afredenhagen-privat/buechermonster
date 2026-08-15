@@ -238,7 +238,11 @@ Jede Zeile zeigt **Titel und Autor** — das ist gesetzt. Dazu Cover-Miniatur (o
 Initialen, wenn kein Cover da ist), Sterne, Statuspunkt, Genre-Chips, bei Reihenbüchern `Reihenname · Bd. 3`,
 und bei ausgeliehenen Büchern eine Zeile `Verliehen an Jonas · zurück bis 30.09.`
 
-Sortierung: Titel A–Z, Titel Z–A, Autor A–Z, Bewertung absteigend, zuletzt hinzugefügt, Reihe + Band.
+Sortierung: Titel A–Z, Titel Z–A, Autor A–Z, Bewertung absteigend, Erscheinungsjahr neueste zuerst,
+Erscheinungsjahr älteste zuerst, zuletzt hinzugefügt, Reihe + Band.
+
+Bücher ohne Jahresangabe stehen bei beiden Jahres-Sortierungen am Ende. Sie als ältestes oder neuestes
+einzureihen wäre eine Behauptung, die die Daten nicht hergeben. Bei gleichem Jahr entscheidet der Titel.
 
 Titel werden ohne führende Artikel sortiert, „Der Herr der Ringe" steht also unter H, nicht unter D.
 Betroffen sind `Der Die Das Ein Eine The A An`. Autoren sortieren nach `Nachname, Vorname`, abgeleitet

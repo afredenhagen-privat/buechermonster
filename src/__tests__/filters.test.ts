@@ -25,11 +25,11 @@ function book(id: number, over: Partial<Book> = {}): Book {
 }
 
 const BOOKS: Book[] = [
-  book(1, { title: 'Tintenherz', authors: ['Cornelia Funke'], status: 'read', rating: 5, seriesId: 1, seriesIndex: 1, ownerId: 1, addedAt: '2026-01-01T00:00:00.000Z' }),
-  book(2, { title: 'Der Distelfink', authors: ['Donna Tartt'], status: 'reading', rating: 0, ownerId: 1, notes: 'Zieht sich in der Mitte.', addedAt: '2026-02-01T00:00:00.000Z' }),
-  book(3, { title: 'Das Lied der Krähen', authors: ['Leigh Bardugo'], status: 'read', rating: 5, seriesId: 2, seriesIndex: 1, ownerId: 1, addedAt: '2026-03-01T00:00:00.000Z' }),
-  book(4, { title: 'Der Schwarm', authors: ['Frank Schätzing'], status: 'unread', rating: 0, ownerId: 2, addedAt: '2026-04-01T00:00:00.000Z' }),
-  book(5, { title: 'Tintenblut', authors: ['Cornelia Funke'], status: 'unread', rating: 0, seriesId: 1, seriesIndex: 2, ownerId: 1, addedAt: '2026-05-01T00:00:00.000Z' }),
+  book(1, { title: 'Tintenherz', authors: ['Cornelia Funke'], status: 'read', rating: 5, seriesId: 1, seriesIndex: 1, ownerId: 1, publishedYear: 2003, addedAt: '2026-01-01T00:00:00.000Z' }),
+  book(2, { title: 'Der Distelfink', authors: ['Donna Tartt'], status: 'reading', rating: 0, ownerId: 1, publishedYear: 2013, notes: 'Zieht sich in der Mitte.', addedAt: '2026-02-01T00:00:00.000Z' }),
+  book(3, { title: 'Das Lied der Krähen', authors: ['Leigh Bardugo'], status: 'read', rating: 5, seriesId: 2, seriesIndex: 1, ownerId: 1, publishedYear: 2016, addedAt: '2026-03-01T00:00:00.000Z' }),
+  book(4, { title: 'Der Schwarm', authors: ['Frank Schätzing'], status: 'unread', rating: 0, ownerId: 2, publishedYear: 2004, addedAt: '2026-04-01T00:00:00.000Z' }),
+  book(5, { title: 'Tintenblut', authors: ['Cornelia Funke'], status: 'unread', rating: 0, seriesId: 1, seriesIndex: 2, ownerId: 1, publishedYear: null, addedAt: '2026-05-01T00:00:00.000Z' }),
 ];
 
 const GENRES: Record<number, number[]> = { 1: [3, 9], 2: [1], 3: [3], 4: [2, 4], 5: [3] };
@@ -179,6 +179,44 @@ describe('sortBooks', () => {
 
   it('sortiert die beste Bewertung nach oben', () => {
     expect(titles('rating').slice(0, 2)).toEqual(['Das Lied der Krähen', 'Tintenherz']);
+  });
+
+  it('sortiert nach Erscheinungsjahr, neueste zuerst', () => {
+    expect(titles('yearDesc')).toEqual([
+      'Das Lied der Krähen',
+      'Der Distelfink',
+      'Der Schwarm',
+      'Tintenherz',
+      'Tintenblut',
+    ]);
+  });
+
+  it('sortiert nach Erscheinungsjahr, älteste zuerst', () => {
+    expect(titles('yearAsc')).toEqual([
+      'Tintenherz',
+      'Der Schwarm',
+      'Der Distelfink',
+      'Das Lied der Krähen',
+      'Tintenblut',
+    ]);
+  });
+
+  it('hängt Bücher ohne Jahresangabe in beide Richtungen hinten an', () => {
+    // "Tintenblut" hat kein Jahr. Es als ältestes oder neuestes einzusortieren
+    // wäre eine Behauptung, die die Daten nicht hergeben.
+    expect(titles('yearDesc').at(-1)).toBe('Tintenblut');
+    expect(titles('yearAsc').at(-1)).toBe('Tintenblut');
+  });
+
+  it('sortiert Bücher desselben Jahres nach Titel', () => {
+    const sameYear = [
+      book(10, { title: 'Zebra', publishedYear: 2020 }),
+      book(11, { title: 'Der Apfel', publishedYear: 2020 }),
+    ];
+    expect(sortBooks(sameYear, 'yearDesc', ctx).map((b) => b.title)).toEqual([
+      'Der Apfel',
+      'Zebra',
+    ]);
   });
 
   it('stellt zuletzt Hinzugefügtes nach vorn', () => {

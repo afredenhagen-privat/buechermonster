@@ -1,13 +1,23 @@
 import type { Book, BookStatus, Loan } from '@/types';
 import { compareGerman } from './sortKeys';
 
-export type SortKey = 'title' | 'titleDesc' | 'author' | 'rating' | 'added' | 'series';
+export type SortKey =
+  | 'title'
+  | 'titleDesc'
+  | 'author'
+  | 'rating'
+  | 'added'
+  | 'series'
+  | 'yearDesc'
+  | 'yearAsc';
 
 export const SORT_OPTIONS: readonly { key: SortKey; label: string }[] = [
   { key: 'title', label: 'Titel A–Z' },
   { key: 'titleDesc', label: 'Titel Z–A' },
   { key: 'author', label: 'Autor A–Z' },
   { key: 'rating', label: 'Bewertung, beste zuerst' },
+  { key: 'yearDesc', label: 'Erscheinungsjahr, neueste zuerst' },
+  { key: 'yearAsc', label: 'Erscheinungsjahr, älteste zuerst' },
   { key: 'added', label: 'Zuletzt hinzugefügt' },
   { key: 'series', label: 'Reihe und Band' },
 ] as const;
@@ -108,6 +118,11 @@ export function sortBooks(books: readonly Book[], key: SortKey, ctx: FilterConte
     titleDesc: (a, b) => -byTitle(a, b),
     author: (a, b) => compareGerman(a.authorSort, b.authorSort) || byTitle(a, b),
     rating: (a, b) => b.rating - a.rating || byTitle(a, b),
+    // Bücher ohne Jahresangabe hängen in beiden Richtungen hinten dran. Sie
+    // als ältestes oder neuestes einzusortieren wäre eine Behauptung, die
+    // die Daten nicht hergeben.
+    yearDesc: (a, b) => byYear(a, b, -1) || byTitle(a, b),
+    yearAsc: (a, b) => byYear(a, b, 1) || byTitle(a, b),
     // ISO-Zeitstempel sortieren als Zeichenketten korrekt, dafür braucht es
     // keinen Kollator — der würde die Datumsteile nur als Zahlen missdeuten.
     added: (a, b) => (a.addedAt < b.addedAt ? 1 : a.addedAt > b.addedAt ? -1 : 0) || byTitle(a, b),
@@ -123,4 +138,12 @@ export function sortBooks(books: readonly Book[], key: SortKey, ctx: FilterConte
   };
 
   return [...books].sort(comparators[key]);
+}
+
+/** `direction` ist -1 für neueste zuerst, 1 für älteste zuerst. */
+function byYear(a: Book, b: Book, direction: 1 | -1): number {
+  if (a.publishedYear === null && b.publishedYear === null) return 0;
+  if (a.publishedYear === null) return 1;
+  if (b.publishedYear === null) return -1;
+  return (a.publishedYear - b.publishedYear) * direction;
 }
