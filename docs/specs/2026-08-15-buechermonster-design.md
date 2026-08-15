@@ -118,18 +118,45 @@ Eigene Genres kannst du in den Einstellungen anlegen, umbenennen, einfärben und
 
 Drei Wege, alle enden im selben Bearbeiten-Formular, bevor gespeichert wird:
 
-1. **Barcode scannen.** Kamera über `getUserMedia({ facingMode: 'environment' })`. Erkennung primär mit
-   der nativen `BarcodeDetector`-API (Android Chrome kann das ohne Zusatzcode), sonst wird `@zxing/browser`
-   nachgeladen — das ist der Weg für iOS-Safari.
+1. **Barcode scannen.** Kamera über `getUserMedia`, Erkennung primär mit der nativen `BarcodeDetector`-API
+   (Android Chrome kann das ohne Zusatzcode), sonst wird `@zxing/browser` nachgeladen — der Weg für
+   iOS-Safari. Drei Punkte, an denen das sonst still scheitert und die am 2026-08-15 genau so gescheitert
+   sind: die Formatliste darf nur Werte aus der Spezifikation enthalten (`'isbn'` gibt es dort nicht, der
+   Konstruktor wirft dann und die Kamera läuft ohne je etwas zu erkennen), die Kamera braucht
+   `focusMode: 'continuous'`, weil ein Handy auf Nahdistanz sonst nicht scharfstellt, und die Auflösung
+   muss hoch genug sein, damit die schmalen Striche eines EAN-13 überhaupt genug Pixel bekommen.
+   Vorbild ist der Scanner im Vorratsmonster, der genau das richtig macht.
+
+   Ein gescannter EAN-13 wird zusätzlich auf den Bereich 978/979 geprüft. Produkt-Barcodes rechnen die
+   Prüfziffer identisch — ohne diese Prüfung würde eine Shampooflasche als ISBN durchgehen und die App
+   nur „nicht gefunden" melden, statt zu sagen, dass das kein Buch ist.
 2. **ISBN eintippen.** 10 oder 13 Stellen, Prüfziffer wird lokal validiert, bevor überhaupt eine
    Abfrage rausgeht.
 3. **Komplett manuell.** Für alte Bücher ohne ISBN.
 
 ### Abfrage
 
-Zuerst Google Books (`https://www.googleapis.com/books/v1/volumes?q=isbn:…`, kein API-Key nötig, CORS
-erlaubt, brauchbare deutsche Abdeckung). Wenn dort nichts kommt, OpenLibrary als zweiter Versuch.
-Kein Treffer oder kein Netz → das Formular öffnet sich leer mit vorbelegter ISBN, du tippst selbst.
+Drei Quellen, der Reihe nach (korrigiert am 2026-08-15, siehe unten):
+
+1. **Deutsche Nationalbibliothek** über die SRU-Schnittstelle, Format `oai_dc`. Kennt praktisch jedes in
+   Deutschland erschienene Buch, braucht keinen Schlüssel und schickt `Access-Control-Allow-Origin: *`.
+2. **OpenLibrary** für fremdsprachige Titel, die die DNB nicht hat.
+3. **Google Books** ganz hinten.
+
+Ursprünglich stand Google Books an erster Stelle. Das war falsch: ohne API-Schlüssel läuft die Abfrage über
+ein gemeinsames Kontingent, das regelmäßig erschöpft ist — die Antwort ist dann `429 Quota exceeded`, und
+zwar für alle. Ein Schlüssel kommt nicht in Frage, das Repository ist öffentlich. Die DNB hat dieses Problem
+nicht und ist für deutsche Bücher ohnehin die bessere Quelle.
+
+Jede Quelle bekommt acht Sekunden. Ohne dieses Limit bleibt eine Anfrage, die weder antwortet noch abbricht,
+ewig hängen, und die Ansicht steht dauerhaft auf „wird gefragt".
+
+Die drei Ausgänge werden unterschieden, weil sie im UI verschiedene Sätze brauchen: Treffer, nichts gefunden,
+keine Quelle erreichbar. Bei den letzten beiden öffnet sich das Formular leer mit vorbelegter ISBN.
+
+Titelbilder gibt die DNB nicht heraus. Die kommen deshalb immer über die Cover-Adresse von OpenLibrary,
+anhand der ISBN — mit `default=false`, damit es 404 statt eines grauen Platzhalters gibt. Fehlt das Bild,
+bleibt die Farbkachel mit der Initiale.
 
 Trefferdaten sind immer nur ein Vorschlag. Das Formular zeigt sie an, du korrigierst, dann wird
 gespeichert. Nichts landet ungeprüft in der Datenbank.

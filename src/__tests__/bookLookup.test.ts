@@ -2,52 +2,62 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   InvalidIsbnError,
   LookupOfflineError,
+  coverUrlForIsbn,
   lookupIsbn,
 } from '@/services/bookLookup';
 
 const ISBN = '9783791504650';
 
-function jsonResponse(body: unknown, init: { ok?: boolean; status?: number } = {}): Response {
+function response(body: string | object, init: { ok?: boolean; status?: number } = {}): Response {
+  const text = typeof body === 'string' ? body : JSON.stringify(body);
   return {
     ok: init.ok ?? true,
     status: init.status ?? 200,
-    json: async () => body,
+    text: async () => text,
+    json: async () => (typeof body === 'string' ? JSON.parse(body) : body),
   } as unknown as Response;
 }
 
-const GOOGLE_HIT = {
+const DNB_HIT = response(`<?xml version="1.0" encoding="UTF-8"?>
+<searchRetrieveResponse xmlns="http://www.loc.gov/zing/srw/"><records><record><recordData><dc xmlns:dc="http://purl.org/dc/elements/1.1/">
+<dc:title>Tintenherz / Cornelia Funke</dc:title>
+<dc:creator>Funke, Cornelia [Verfasser]</dc:creator>
+<dc:publisher>Hamburg : Dressler</dc:publisher>
+<dc:date>2003</dc:date>
+<dc:format>573 S.</dc:format>
+</dc></recordData></record></records></searchRetrieveResponse>`);
+
+const DNB_MISS = response(
+  `<?xml version="1.0"?><searchRetrieveResponse xmlns="http://www.loc.gov/zing/srw/"><numberOfRecords>0</numberOfRecords><records/></searchRetrieveResponse>`,
+);
+
+const OPENLIBRARY_HIT = response({
+  [`ISBN:${ISBN}`]: {
+    title: 'Inkheart',
+    authors: [{ name: 'Cornelia Funke' }],
+    publishers: [{ name: 'Scholastic' }],
+    publish_date: '2003',
+    number_of_pages: 534,
+    subjects: [{ name: 'Fantasy' }],
+    cover: { medium: 'https://covers.openlibrary.org/b/id/1-M.jpg' },
+  },
+});
+
+const GOOGLE_HIT = response({
   items: [
     {
       volumeInfo: {
         title: 'Tintenherz',
-        subtitle: 'Roman',
         authors: ['Cornelia Funke'],
-        publisher: 'Cecilie Dressler Verlag',
         publishedDate: '2003-09-01',
         pageCount: 576,
-        language: 'de',
         categories: ['Juvenile Fiction / Fantasy & Magic'],
-        industryIdentifiers: [
-          { type: 'ISBN_13', identifier: '9783791504650' },
-          { type: 'ISBN_10', identifier: '3791504657' },
-        ],
+        industryIdentifiers: [{ type: 'ISBN_13', identifier: ISBN }],
         imageLinks: { thumbnail: 'http://books.google.com/books/content?id=abc&edge=curl' },
       },
     },
   ],
-};
-
-const OPENLIBRARY_HIT = {
-  [`ISBN:${ISBN}`]: {
-    title: 'Tintenherz',
-    authors: [{ name: 'Cornelia Funke' }],
-    publishers: [{ name: 'Dressler' }],
-    publish_date: '2003',
-    number_of_pages: 576,
-    subjects: [{ name: 'Fantasy' }],
-    cover: { medium: 'https://covers.openlibrary.org/b/id/1-M.jpg' },
-  },
-};
+});
 
 describe('lookupIsbn', () => {
   it('lehnt eine ungültige ISBN ab, ohne das Netz zu bemühen', async () => {
@@ -56,79 +66,102 @@ describe('lookupIsbn', () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it('übernimmt einen Google-Books-Treffer', async () => {
-    const fetchImpl = vi.fn(async () => jsonResponse(GOOGLE_HIT));
+  it('fragt zuerst die DNB und hört bei einem Treffer auf', async () => {
+    // Reihenfolge ist Absicht: die DNB kennt deutsche Bücher am besten und
+    // hat kein Kontingentproblem.
+    const fetchImpl = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => DNB_HIT);
     const result = await lookupIsbn(ISBN, { fetchImpl });
 
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(String(fetchImpl.mock.calls[0]?.[0])).toContain('services.dnb.de');
     expect(result).toMatchObject({
       title: 'Tintenherz',
-      subtitle: 'Roman',
       authors: ['Cornelia Funke'],
-      publisher: 'Cecilie Dressler Verlag',
-      publishedYear: 2003,
-      pageCount: 576,
-      isbn13: '9783791504650',
-      isbn10: '3791504657',
-      categories: ['Juvenile Fiction / Fantasy & Magic'],
-      source: 'google',
+      publisher: 'Dressler',
+      pageCount: 573,
+      source: 'dnb',
     });
   });
 
-  it('zieht die Cover-Adresse auf https hoch', async () => {
-    const fetchImpl = vi.fn(async () => jsonResponse(GOOGLE_HIT));
-    const result = await lookupIsbn(ISBN, { fetchImpl });
-
-    // http-Bilder werden auf einer https-Seite als Mixed Content blockiert.
-    expect(result?.coverUrl).toBe('https://books.google.com/books/content?id=abc');
-  });
-
-  it('fragt bei Google ohne Treffer die zweite Quelle', async () => {
+  it('geht bei einer der DNB unbekannten ISBN zu OpenLibrary weiter', async () => {
     const fetchImpl = vi
-      .fn()
-      .mockResolvedValueOnce(jsonResponse({ totalItems: 0 }))
-      .mockResolvedValueOnce(jsonResponse(OPENLIBRARY_HIT));
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(DNB_MISS)
+      .mockResolvedValueOnce(OPENLIBRARY_HIT);
 
     const result = await lookupIsbn(ISBN, { fetchImpl });
-
     expect(fetchImpl).toHaveBeenCalledTimes(2);
-    expect(result).toMatchObject({ title: 'Tintenherz', source: 'openlibrary' });
+    expect(result).toMatchObject({ title: 'Inkheart', source: 'openlibrary' });
   });
 
-  it('weicht auch bei einem Serverfehler auf die zweite Quelle aus', async () => {
+  it('nimmt Google Books erst, wenn beide vorherigen Quellen nichts haben', async () => {
     const fetchImpl = vi
-      .fn()
-      .mockResolvedValueOnce(jsonResponse({}, { ok: false, status: 503 }))
-      .mockResolvedValueOnce(jsonResponse(OPENLIBRARY_HIT));
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(DNB_MISS)
+      .mockResolvedValueOnce(response({}))
+      .mockResolvedValueOnce(GOOGLE_HIT);
+
+    const result = await lookupIsbn(ISBN, { fetchImpl });
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(result).toMatchObject({ source: 'google' });
+  });
+
+  it('überspringt eine Quelle, die mit einem Fehlercode antwortet', async () => {
+    // Google liefert ohne API-Schlüssel regelmäßig 429, weil das gemeinsame
+    // Tageskontingent erschöpft ist. Das darf die Suche nicht abwürgen.
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(response('', { ok: false, status: 503 }))
+      .mockResolvedValueOnce(OPENLIBRARY_HIT);
 
     expect(await lookupIsbn(ISBN, { fetchImpl })).toMatchObject({ source: 'openlibrary' });
   });
 
-  it('gibt null zurück, wenn beide Quellen das Buch nicht kennen', async () => {
+  it('zieht die Cover-Adresse von Google auf https hoch', async () => {
     const fetchImpl = vi
-      .fn()
-      .mockResolvedValueOnce(jsonResponse({ totalItems: 0 }))
-      .mockResolvedValueOnce(jsonResponse({}));
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(DNB_MISS)
+      .mockResolvedValueOnce(response({}))
+      .mockResolvedValueOnce(GOOGLE_HIT);
+
+    const result = await lookupIsbn(ISBN, { fetchImpl });
+    expect(result?.coverUrl).toBe('https://books.google.com/books/content?id=abc');
+  });
+
+  it('gibt null zurück, wenn keine Quelle das Buch kennt', async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(DNB_MISS)
+      .mockResolvedValueOnce(response({}))
+      .mockResolvedValueOnce(response({ totalItems: 0 }));
 
     expect(await lookupIsbn(ISBN, { fetchImpl })).toBeNull();
   });
 
-  it('gibt auf, wenn eine Quelle gar nicht antwortet', async () => {
+  it('unterscheidet "nicht gefunden" von "keine Verbindung"', async () => {
+    const fetchImpl = vi.fn(async () => {
+      throw new TypeError('Failed to fetch');
+    });
+    await expect(lookupIsbn(ISBN, { fetchImpl })).rejects.toThrow(LookupOfflineError);
+  });
+
+  it('gibt auf, wenn keine Quelle antwortet', async () => {
     // Ohne Zeitlimit bliebe die Ansicht dauerhaft auf "wird gefragt" stehen.
     const fetchImpl = vi.fn(() => new Promise<Response>(() => {}));
-
     await expect(lookupIsbn(ISBN, { fetchImpl, timeoutMs: 20 })).rejects.toThrow(
       LookupOfflineError,
     );
   });
 
-  it('nimmt die zweite Quelle, wenn die erste nur hängt', async () => {
+  it('nimmt die nächste Quelle, wenn die erste nur hängt', async () => {
     const fetchImpl = vi
       .fn<typeof fetch>()
       .mockImplementationOnce(() => new Promise<Response>(() => {}))
-      .mockResolvedValueOnce(jsonResponse(OPENLIBRARY_HIT));
+      .mockResolvedValueOnce(OPENLIBRARY_HIT);
 
-    const result = await lookupIsbn(ISBN, { fetchImpl, timeoutMs: 20 });
-    expect(result).toMatchObject({ source: 'openlibrary' });
+    expect(await lookupIsbn(ISBN, { fetchImpl, timeoutMs: 20 })).toMatchObject({
+      source: 'openlibrary',
+    });
   });
 
   it('bricht die hängende Anfrage auch wirklich ab', async () => {
@@ -142,38 +175,22 @@ describe('lookupIsbn', () => {
     expect(seenSignal?.aborted).toBe(true);
   });
 
-  it('unterscheidet "nicht gefunden" von "keine Verbindung"', async () => {
-    const fetchImpl = vi.fn(async () => {
-      throw new TypeError('Failed to fetch');
-    });
-
-    await expect(lookupIsbn(ISBN, { fetchImpl })).rejects.toThrow(LookupOfflineError);
-  });
-
-  it('kommt mit einer ISBN-10 und Bindestrichen klar', async () => {
-    const fetchImpl = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
-      jsonResponse(GOOGLE_HIT),
-    );
+  it('rechnet eine ISBN-10 vor der Abfrage um', async () => {
+    const fetchImpl = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => DNB_HIT);
     await lookupIsbn('0-306-40615-2', { fetchImpl });
 
-    const url = String(fetchImpl.mock.calls[0]?.[0]);
-    expect(url).toContain('isbn:9780306406157');
+    expect(String(fetchImpl.mock.calls[0]?.[0])).toContain('9780306406157');
+  });
+});
+
+describe('coverUrlForIsbn', () => {
+  it('baut die Cover-Adresse von OpenLibrary, weil die DNB keine Bilder hat', () => {
+    expect(coverUrlForIsbn(ISBN)).toBe(
+      `https://covers.openlibrary.org/b/isbn/${ISBN}-M.jpg?default=false`,
+    );
   });
 
-  it('verkraftet einen Treffer ohne Zusatzangaben', async () => {
-    const fetchImpl = vi.fn(async () =>
-      jsonResponse({ items: [{ volumeInfo: { title: 'Nur ein Titel' } }] }),
-    );
-    const result = await lookupIsbn(ISBN, { fetchImpl });
-
-    expect(result).toMatchObject({
-      title: 'Nur ein Titel',
-      authors: [],
-      publisher: null,
-      publishedYear: null,
-      pageCount: null,
-      coverUrl: null,
-      categories: [],
-    });
+  it('gibt ohne ISBN null zurück', () => {
+    expect(coverUrlForIsbn(null)).toBeNull();
   });
 });

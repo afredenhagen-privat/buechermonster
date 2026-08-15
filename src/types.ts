@@ -109,5 +109,13 @@ export interface LookupResult {
   coverUrl: string | null;
   /** Rohe Kategorien der Quelle, noch nicht auf eigene Genres übersetzt. */
   categories: string[];
-  source: 'google' | 'openlibrary';
+  source: LookupSource;
 }
+
+export type LookupSource = 'dnb' | 'openlibrary' | 'google';
+
+export const SOURCE_LABEL: Record<LookupSource, string> = {
+  dnb: 'Deutsche Nationalbibliothek',
+  openlibrary: 'OpenLibrary',
+  google: 'Google Books',
+};

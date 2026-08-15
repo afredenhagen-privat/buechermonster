@@ -32,6 +32,18 @@ export function isValidIsbn(raw: string): boolean {
   return isValidIsbn10(raw) || isValidIsbn13(raw);
 }
 
+/**
+ * Bücher tragen einen EAN-13 aus dem Bereich 978/979 ("Bookland"). Eine
+ * Shampooflasche hat einen genauso gültigen EAN-13 mit derselben Prüfziffer-
+ * rechnung — ohne diese Prüfung würde die App den anstandslos als ISBN
+ * durchwinken und dann nur nichts finden.
+ */
+export function isBookBarcode(raw: string): boolean {
+  const isbn = normalizeIsbn(raw);
+  if (isValidIsbn10(isbn)) return true;
+  return isValidIsbn13(isbn) && (isbn.startsWith('978') || isbn.startsWith('979'));
+}
+
 /** Rechnet eine gültige ISBN-10 in die ISBN-13 um; bei ungültiger Eingabe null. */
 export function toIsbn13(raw: string): string | null {
   const isbn = normalizeIsbn(raw);

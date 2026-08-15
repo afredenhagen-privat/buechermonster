@@ -8,8 +8,9 @@ haben, verlassen das Handy nie. Es gibt keinen Server, kein Konto und keine Sync
 
 ## Was die App kann
 
-- Bücher per Barcode-Scan, per ISBN-Eingabe oder von Hand erfassen; die Daten kommen von Google Books, sonst
-  von OpenLibrary. Das ist die einzige Netzverbindung, die die App je aufbaut.
+- Bücher per Barcode-Scan, per ISBN-Eingabe oder von Hand erfassen. Die Daten kommen von der Deutschen
+  Nationalbibliothek, ersatzweise von OpenLibrary oder Google Books. Das ist die einzige Netzverbindung, die
+  die App je aufbaut.
 - Genre und Reihe werden aus der Antwort abgeleitet, aber nur vorgeschlagen — gespeichert wird, was im
   Formular steht.
 - Lesestatus (ungelesen / lese gerade / gelesen), Bewertung von 1 bis 5, Genres, Reihe mit Bandnummer,

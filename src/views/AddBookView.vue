@@ -5,11 +5,17 @@ import BookCover from '@/components/BookCover.vue';
 import { useBarcodeScanner } from '@/composables/useBarcodeScanner';
 import { useToast } from '@/composables/useToast';
 import { useBooksStore, useGenresStore, useOwnersStore } from '@/stores';
-import { InvalidIsbnError, LookupOfflineError, fetchCoverDataUrl, lookupIsbn } from '@/services/bookLookup';
+import {
+  InvalidIsbnError,
+  LookupOfflineError,
+  coverUrlForIsbn,
+  fetchCoverDataUrl,
+  lookupIsbn,
+} from '@/services/bookLookup';
 import { mapCategories } from '@/services/genreMapping';
 import { parseSeries } from '@/services/seriesParser';
-import { isValidIsbn, splitIsbn } from '@/services/isbn';
-import { BOOK_STATUSES, STATUS_LABEL, type BookStatus } from '@/types';
+import { isBookBarcode, isValidIsbn, splitIsbn } from '@/services/isbn';
+import { BOOK_STATUSES, SOURCE_LABEL, STATUS_LABEL, type BookStatus } from '@/types';
 
 const router = useRouter();
 const books = useBooksStore();
@@ -58,6 +64,14 @@ async function toggleCamera() {
   await scanner.start(video, (code) => {
     scanner.stop();
     isbnInput.value = code;
+
+    // Ein EAN-13 von einer Shampooflasche hat dieselbe Prüfziffernrechnung
+    // wie eine ISBN — ohne diese Unterscheidung liefe die Suche ins Leere,
+    // und die Meldung wäre "nicht gefunden" statt "das ist kein Buch".
+    if (!isBookBarcode(code)) {
+      show(`${code} ist kein Buch-Barcode. Buch-Codes fangen mit 978 oder 979 an.`);
+      return;
+    }
     void search();
   });
 }
@@ -111,10 +125,12 @@ async function search() {
         .filter((id): id is number => id !== undefined),
     };
 
-    statusLine.value = `Gefunden bei ${result.source === 'google' ? 'Google Books' : 'OpenLibrary'}`;
+    statusLine.value = `Gefunden bei ${SOURCE_LABEL[result.source]}`;
 
     // Cover im Hintergrund holen — klappt es nicht, bleibt die Farbkachel.
-    void fetchCoverDataUrl(result.coverUrl).then((dataUrl) => {
+    // Die DNB gibt keine Bilder heraus, dafür springt OpenLibrary ein.
+    const coverUrl = result.coverUrl ?? coverUrlForIsbn(result.isbn13);
+    void fetchCoverDataUrl(coverUrl).then((dataUrl) => {
       if (dataUrl && form.value.open) form.value.coverDataUrl = dataUrl;
     });
   } catch (error) {
@@ -232,18 +248,35 @@ function reset() {
         </p>
       </div>
 
-      <div v-else class="pointer-events-none absolute inset-0">
-        <div class="absolute left-[13%] right-[13%] top-[28%] h-[44%] rounded-lg border-2 border-accent" />
-        <p class="absolute inset-x-0 bottom-3 text-center text-xs text-white/80">
-          {{ scanner.engine.value === 'native' ? 'Barcode ins Feld halten' : 'Barcode ins Feld halten (Erkennung nachgeladen)' }}
-        </p>
-      </div>
+      <template v-else>
+        <div class="pointer-events-none absolute inset-0">
+          <div class="absolute left-[13%] right-[13%] top-[28%] h-[44%] rounded-lg border-2 border-accent" />
+          <p class="absolute inset-x-0 bottom-3 text-center text-xs text-white/80">
+            Barcode auf dem Buchrücken ins Feld halten
+          </p>
+        </div>
+
+        <button
+          v-if="scanner.torchAvailable.value"
+          type="button"
+          class="absolute right-3 top-3 rounded-full px-3 py-1.5 text-sm"
+          :class="scanner.torchOn.value ? 'bg-star text-black' : 'bg-black/60 text-white'"
+          :aria-label="scanner.torchOn.value ? 'Licht aus' : 'Licht an'"
+          @click="scanner.toggleTorch()"
+        >
+          💡
+        </button>
+      </template>
     </div>
 
     <button type="button" class="btn-primary w-full" :disabled="busy" @click="toggleCamera">
       {{ scanner.running.value ? 'Kamera aus' : 'Kamera an und scannen' }}
     </button>
     <p v-if="scanner.error.value" class="mt-2 text-xs text-overdue">{{ scanner.error.value }}</p>
+    <p v-else-if="scanner.engine.value === 'zxing'" class="mt-2 text-xs text-muted">
+      Dein Browser kann Barcodes nicht selbst erkennen, deshalb läuft eine nachgeladene Erkennung.
+      Die ist langsamer — wenn es nicht anspringt, tipp die ISBN einfach ein.
+    </p>
 
     <!-- ISBN eintippen -->
     <div class="my-4 flex items-center gap-2.5 text-xs text-muted">

@@ -15,11 +15,20 @@ interface Rule {
 const STRONG_RULES: Rule[] = [
   { genre: 'Fantasy', keywords: ['fantasy', 'magic', 'wizard', 'dragon', 'märchen', 'fairy tale'] },
   { genre: 'Science-Fiction', keywords: ['science fiction', 'sci-fi', 'dystopian', 'space opera'] },
+  // "Psychothriller", "Kriminalroman" und Ähnliches stehen bei deutschen
+  // Büchern meist im Untertitel — der wird deshalb mit ausgewertet.
   { genre: 'Krimi & Thriller', keywords: ['mystery', 'detective', 'crime', 'thriller', 'suspense', 'krimi'] },
-  { genre: 'Horror', keywords: ['horror', 'ghost', 'occult'] },
+  { genre: 'Horror', keywords: ['horror', 'ghost', 'occult', 'gruselroman'] },
   { genre: 'Liebesroman', keywords: ['romance', 'love stories', 'liebesroman'] },
   { genre: 'Historisches', keywords: ['historical fiction', 'historical', 'historisch'] },
-  { genre: 'Kinder- & Jugendbuch', keywords: ['juvenile', 'young adult', 'children', 'kinderbuch', 'jugendbuch'] },
+  {
+    genre: 'Kinder- & Jugendbuch',
+    keywords: [
+      'juvenile', 'young adult', 'children', 'kinderbuch', 'jugendbuch',
+      // Schreibweisen der DNB-Sachgruppen
+      'kinder- und jugend', 'jugendliteratur', 'kinderliteratur', 'bilderbuch',
+    ],
+  },
   { genre: 'Comic & Graphic Novel', keywords: ['comics', 'graphic novel', 'manga', 'comic'] },
   { genre: 'Klassiker', keywords: ['classics', 'klassiker'] },
   { genre: 'Biografie', keywords: ['biography', 'autobiography', 'memoir', 'biografie'] },

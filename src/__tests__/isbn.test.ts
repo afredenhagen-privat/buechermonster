@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isBookBarcode,
   isValidIsbn,
   isValidIsbn10,
   isValidIsbn13,
@@ -91,5 +92,20 @@ describe('isValidIsbn', () => {
     expect(isValidIsbn('0306406152')).toBe(true);
     expect(isValidIsbn('9783791504650')).toBe(true);
     expect(isValidIsbn('42')).toBe(false);
+  });
+});
+
+describe('isBookBarcode', () => {
+  it('erkennt Buch-Barcodes aus dem 978/979-Bereich', () => {
+    expect(isBookBarcode('9783791504650')).toBe(true);
+    expect(isBookBarcode('9791234567896')).toBe(true);
+    expect(isBookBarcode('0306406152')).toBe(true);
+  });
+
+  it('lehnt einen Produkt-Barcode ab, obwohl die Prüfziffer stimmt', () => {
+    // EAN-13 und ISBN-13 rechnen die Prüfziffer identisch. Ohne die
+    // Bereichsprüfung würde eine Shampooflasche als ISBN durchgehen.
+    expect(isValidIsbn13('4009900484220')).toBe(true);
+    expect(isBookBarcode('4009900484220')).toBe(false);
   });
 });
