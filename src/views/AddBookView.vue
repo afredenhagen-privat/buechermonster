@@ -366,6 +366,9 @@ function reset() {
     </div>
 
     <p v-if="scanner.error.value" class="mt-2 text-xs text-overdue">{{ scanner.error.value }}</p>
+    <p v-else-if="scanner.focusWarning.value" class="mt-2 text-xs text-overdue">
+      {{ scanner.focusWarning.value }}
+    </p>
 
     <!-- Foto über die Kamera-App -->
     <div class="my-4 flex items-center gap-2.5 text-xs text-muted">
@@ -433,6 +436,8 @@ function reset() {
         <dd>{{ scanner.diagnostics.value.resolution }}</dd>
         <dt class="font-semibold">Objektiv</dt>
         <dd>{{ scanner.diagnostics.value.cameraLabel }}</dd>
+        <dt class="font-semibold">Objektivwahl</dt>
+        <dd>{{ scanner.diagnostics.value.lensChoice }}</dd>
         <dt class="font-semibold">Kameras</dt>
         <dd>{{ scanner.diagnostics.value.cameraCount }}</dd>
         <dt class="font-semibold">Fokus</dt>

@@ -5,19 +5,19 @@ import { createDecoder, type Decoder } from '@/services/barcodeDecoder';
  * Live-Scannen über die Kamera.
  *
  * Auf Android steckt hinter der Erkennung ML Kit, also dasselbe wie in guten
- * Scanner-Apps. Wenn ein Strichcode trotzdem nicht gelesen wird, liegt es fast
- * nie an der Erkennung, sondern am Bild — deshalb dreht sich hier das meiste
- * um die Kamera und nicht um den Decoder:
+ * Scanner-Apps. Wird ein Strichcode trotzdem nicht gelesen, liegt es fast nie
+ * an der Erkennung, sondern am Bild — und dort am häufigsten am Objektiv:
  *
- *  - **Objektiv.** Chrome nimmt bei `facingMode: environment` irgendeine
- *    Rückkamera. Erwischt es die Ultraweitwinkel- oder Tele-Linse, hat die oft
- *    Fixfokus oder eine Naheinstellgrenze von 20 cm und wird nie scharf.
- *    Deshalb lassen sich alle Kameras auflisten und durchschalten.
- *  - **Fokus.** `focusMode: 'continuous'` beim Start, dazu Antippen fürs
- *    Nachfokussieren.
- *  - **Zoom.** Die meisten Handys stellen unter 10 cm gar nicht scharf. Weiter
- *    weg gehen und hineinzoomen schlägt näher rangehen.
- *  - **Auflösung.** Bei 640×480 hat ein EAN-13 zu wenige Pixel pro Strich.
+ * `facingMode: 'environment'` überlässt Chrome die Wahl, und Chrome greift
+ * sich gerne die Ultraweitwinkellinse. Die hat auf den meisten Handys einen
+ * **Fixfokus** und meldet als einzigen Modus `manual`. Sie kann also gar nicht
+ * scharfstellen, egal wie lange man draufhält. Deshalb wird nach dem Start
+ * geprüft, ob die gewählte Linse Autofokus anbietet, und andernfalls
+ * automatisch auf eine umgeschaltet, die es tut.
+ *
+ * Dazu die üblichen Punkte: hohe Auflösung, weil ein EAN-13 bei 640×480 zu
+ * wenige Pixel je Strich hat, und Zoom statt Nähe, weil Handys unter 10 cm
+ * ohnehin nicht scharfstellen.
  */
 
 export interface CameraOption {
@@ -34,6 +34,18 @@ export interface ScannerDiagnostics {
   zoomRange: string;
   torch: boolean;
   cameraCount: number;
+  lensChoice: string;
+}
+
+type CameraCapabilities = MediaTrackCapabilities & {
+  torch?: boolean;
+  zoom?: { min: number; max: number; step: number };
+  focusMode?: string[];
+};
+
+interface OpenCamera {
+  stream: MediaStream;
+  track: MediaStreamTrack;
 }
 
 export function useBarcodeScanner() {
@@ -41,6 +53,7 @@ export function useBarcodeScanner() {
   const error = ref('');
   const cameras = ref<CameraOption[]>([]);
   const activeCameraId = ref<string | null>(null);
+  const focusWarning = ref('');
 
   const torchAvailable = ref(false);
   const torchOn = ref(false);
@@ -54,44 +67,22 @@ export function useBarcodeScanner() {
   let frameHandle: number | null = null;
   let stopped = true;
 
-  /**
-   * Namen bekommt man erst, nachdem die Kamera einmal freigegeben wurde —
-   * vorher liefert der Browser leere Labels.
-   */
+  /** Namen liefert der Browser erst, nachdem die Kamera einmal freigegeben wurde. */
   async function listCameras(): Promise<CameraOption[]> {
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
       cameras.value = devices
         .filter((d) => d.kind === 'videoinput')
-        .map((d, index) => ({
-          deviceId: d.deviceId,
-          label: d.label || `Kamera ${index + 1}`,
-        }));
+        .map((d, index) => ({ deviceId: d.deviceId, label: d.label || `Kamera ${index + 1}` }));
     } catch {
       cameras.value = [];
     }
     return cameras.value;
   }
 
-  async function start(
-    video: HTMLVideoElement,
-    onDetect: (code: string) => void,
-    deviceId?: string,
-  ) {
-    error.value = '';
-    if (running.value) stop();
-
-    if (!navigator.mediaDevices?.getUserMedia) {
-      error.value = 'Dieser Browser gibt keinen Zugriff auf die Kamera.';
-      return;
-    }
-
-    const constraints: MediaTrackConstraints = deviceId
-      ? { deviceId: { exact: deviceId } }
-      : { facingMode: { ideal: 'environment' } };
-
+  async function openCamera(constraints: MediaTrackConstraints): Promise<OpenCamera | null> {
     try {
-      stream.value = await navigator.mediaDevices.getUserMedia({
+      const media = await navigator.mediaDevices.getUserMedia({
         video: {
           ...constraints,
           width: { ideal: 1920 },
@@ -102,20 +93,96 @@ export function useBarcodeScanner() {
         },
         audio: false,
       });
-
-      track.value = stream.value.getVideoTracks()[0] ?? null;
-      activeCameraId.value = track.value?.getSettings().deviceId ?? deviceId ?? null;
-      readCapabilities();
-
-      video.srcObject = stream.value;
-      await video.play();
-      running.value = true;
-      stopped = false;
+      const videoTrack = media.getVideoTracks()[0];
+      if (!videoTrack) {
+        for (const t of media.getTracks()) t.stop();
+        return null;
+      }
+      return { stream: media, track: videoTrack };
     } catch {
+      return null;
+    }
+  }
+
+  function hasAutofocus(candidate: MediaStreamTrack): boolean {
+    const modes = (candidate.getCapabilities?.() as CameraCapabilities | undefined)?.focusMode ?? [];
+    return modes.includes('continuous') || modes.includes('single-shot');
+  }
+
+  /**
+   * Sucht unter den übrigen rückwärtigen Kameras eine mit Autofokus. Jede
+   * Kandidatin muss dafür kurz geöffnet werden — die Fähigkeiten stehen erst
+   * am laufenden Track. Das kostet einmalig ein paar hundert Millisekunden
+   * und erspart dem Benutzer, blind Objektive durchzuprobieren.
+   */
+  async function findAutofocusCamera(excludeId: string | undefined): Promise<OpenCamera | null> {
+    const candidates = (await listCameras()).filter(
+      (c) => c.deviceId && c.deviceId !== excludeId && !/front|vorder|user/i.test(c.label),
+    );
+
+    for (const candidate of candidates) {
+      const opened = await openCamera({ deviceId: { exact: candidate.deviceId } });
+      if (!opened) continue;
+      if (hasAutofocus(opened.track)) return opened;
+      for (const t of opened.stream.getTracks()) t.stop();
+    }
+    return null;
+  }
+
+  async function start(
+    video: HTMLVideoElement,
+    onDetect: (code: string) => void,
+    deviceId?: string,
+  ) {
+    error.value = '';
+    focusWarning.value = '';
+    if (running.value) stop();
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      error.value = 'Dieser Browser gibt keinen Zugriff auf die Kamera.';
+      return;
+    }
+
+    let opened = await openCamera(
+      deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: 'environment' } },
+    );
+    if (!opened) {
       error.value = 'Die Kamera lässt sich nicht öffnen. Erlaubt der Browser den Zugriff?';
       return;
     }
 
+    // Nur wenn der Browser die Linse ausgesucht hat, wird nachgebessert —
+    // eine bewusste Auswahl bleibt stehen.
+    let lensChoice = 'vom Browser gewählt';
+    if (!deviceId && !hasAutofocus(opened.track)) {
+      const better = await findAutofocusCamera(opened.track.getSettings().deviceId);
+      if (better) {
+        for (const t of opened.stream.getTracks()) t.stop();
+        opened = better;
+        lensChoice = 'automatisch auf Autofokus gewechselt';
+      } else {
+        lensChoice = 'keine Linse mit Autofokus gefunden';
+        focusWarning.value =
+          'Keine deiner Kameras bietet Autofokus an. Ein Foto über die Kamera-App ist hier der zuverlässigere Weg.';
+      }
+    }
+
+    stream.value = opened.stream;
+    track.value = opened.track;
+    activeCameraId.value = opened.track.getSettings().deviceId ?? deviceId ?? null;
+    readCapabilities();
+
+    try {
+      video.srcObject = opened.stream;
+      await video.play();
+    } catch {
+      error.value = 'Das Kamerabild lässt sich nicht anzeigen.';
+      stop();
+      return;
+    }
+
+    running.value = true;
+    stopped = false;
     await listCameras();
 
     const { decoder, info } = await createDecoder();
@@ -123,13 +190,14 @@ export function useBarcodeScanner() {
       engine: info.engine,
       formats: info.formats,
       resolution: describeResolution(),
-      cameraLabel: track.value?.label || 'unbekannt',
+      cameraLabel: opened.track.label || 'unbekannt',
       focusModes: capabilities().focusMode ?? [],
       zoomRange: zoomAvailable.value
         ? `${zoomRange.value.min}–${zoomRange.value.max}`
         : 'nicht steuerbar',
       torch: torchAvailable.value,
       cameraCount: cameras.value.length,
+      lensChoice,
     };
 
     scanLoop(decoder, video, onDetect);
@@ -155,12 +223,8 @@ export function useBarcodeScanner() {
     void tick();
   }
 
-  function capabilities(): MediaTrackCapabilities & {
-    torch?: boolean;
-    zoom?: { min: number; max: number; step: number };
-    focusMode?: string[];
-  } {
-    return track.value?.getCapabilities?.() ?? {};
+  function capabilities(): CameraCapabilities {
+    return (track.value?.getCapabilities?.() as CameraCapabilities | undefined) ?? {};
   }
 
   function readCapabilities() {
@@ -171,12 +235,9 @@ export function useBarcodeScanner() {
 
     if (caps.zoom) {
       zoomAvailable.value = caps.zoom.max > caps.zoom.min;
-      zoomRange.value = {
-        min: caps.zoom.min,
-        max: caps.zoom.max,
-        step: caps.zoom.step || 0.1,
-      };
-      zoom.value = (track.value?.getSettings() as { zoom?: number } | undefined)?.zoom ?? caps.zoom.min;
+      zoomRange.value = { min: caps.zoom.min, max: caps.zoom.max, step: caps.zoom.step || 0.1 };
+      zoom.value =
+        (track.value?.getSettings() as { zoom?: number } | undefined)?.zoom ?? caps.zoom.min;
     } else {
       zoomAvailable.value = false;
     }
@@ -214,9 +275,10 @@ export function useBarcodeScanner() {
   }
 
   /**
-   * Antippen zum Scharfstellen. Wo der Browser das nicht anbietet, wird
-   * ersatzweise der Dauerfokus neu angestoßen — das reicht auf vielen Geräten,
-   * um eine neue Fokussuche auszulösen.
+   * Antippen zum Scharfstellen. Wo `single-shot` fehlt, wird ersatzweise der
+   * Dauerfokus neu angestoßen — das löst auf vielen Geräten eine neue
+   * Fokussuche aus. Bei einer Fixfokuslinse ist beides wirkungslos, deshalb
+   * die automatische Objektivwahl weiter oben.
    */
   async function refocus(x?: number, y?: number) {
     const current = track.value;
@@ -264,6 +326,7 @@ export function useBarcodeScanner() {
   return {
     running,
     error,
+    focusWarning,
     cameras,
     activeCameraId,
     torchAvailable,

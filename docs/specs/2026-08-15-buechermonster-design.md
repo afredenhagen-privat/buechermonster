@@ -141,9 +141,17 @@ Drei Wege, alle enden im selben Bearbeiten-Formular, bevor gespeichert wird:
      Kamera-App des Systems. Die stellt selbst scharf, mit Autofokus und Makro, und liefert ein Standbild,
      das die Live-Ansicht nicht erreicht. Das ist der zuverlässigste Weg und deshalb gleichwertig neben dem
      Scannen platziert, nicht als Notlösung versteckt.
-   - **Objektivwahl.** Bei `facingMode: environment` nimmt Chrome irgendeine Rückkamera. Erwischt es die
-     Ultraweitwinkel- oder Telelinse, hat die oft Fixfokus oder eine Naheinstellgrenze von 20 cm. Alle
-     Kameras werden aufgelistet und lassen sich durchschalten.
+   - **Objektivwahl, automatisch.** Bei `facingMode: environment` nimmt Chrome irgendeine Rückkamera. Auf
+     dem Testgerät war das „camera 2" von vieren — die Ultraweitwinkellinse, die als einzigen Fokusmodus
+     `manual` meldet und damit prinzipbedingt nicht scharfstellen kann. Genau daran ist das Scannen
+     gescheitert.
+
+     Deshalb prüft die App nach dem Start, ob die gewählte Linse `continuous` oder `single-shot` anbietet.
+     Wenn nicht, öffnet sie der Reihe nach die übrigen rückwärtigen Kameras, bis eine mit Autofokus dabei
+     ist, und bleibt dort. Die Fähigkeiten stehen erst am laufenden Track, ein kurzes Öffnen je Kandidatin
+     ist also unvermeidlich; es kostet einmalig ein paar hundert Millisekunden. Eine vom Benutzer bewusst
+     gewählte Linse wird nicht überstimmt. Findet sich gar keine mit Autofokus, sagt die App das und
+     verweist auf den Foto-Weg.
    - **Zoom.** Die meisten Handys stellen unter 10 cm gar nicht scharf. Weiter weg gehen und hineinzoomen
      ist der richtige Weg, nicht näher rangehen.
    - **Antippen zum Scharfstellen**, mit `pointsOfInterest` wo unterstützt, sonst durch Neuanstoßen des
