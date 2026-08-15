@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Büchermonster — Klickdummy</title>
+<style>
+:root{
+  --bg:#faf7f2; --surface:#fff; --surface-2:#f3ede4;
+  --text:#201b16; --muted:#7a6f65; --border:#e7ded2;
+  --accent:#b4552d; --accent-soft:#f7e9e1; --accent-text:#fff;
+  --star:#dd9a15;
+  --unread:#8b8177; --reading:#2f7d6d; --read:#4a7c3f; --overdue:#c0392b;
+  --shadow:0 1px 3px rgba(32,27,22,.08), 0 8px 24px rgba(32,27,22,.06);
+}
+@media (prefers-color-scheme: dark){
+:root{
+  --bg:#16130f; --surface:#211c17; --surface-2:#2a231d;
+  --text:#f2ece4; --muted:#a1958a; --border:#352d25;
+  --accent:#e5834f; --accent-soft:#3a2419; --accent-text:#1a1208;
+  --star:#e8b542;
+  --unread:#8b8177; --reading:#4aa793; --read:#6da85c; --overdue:#e06b5c;
+  --shadow:0 1px 3px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
+}
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{
+  margin:0;background:var(--bg);color:var(--text);
+  font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  -webkit-font-smoothing:antialiased;
+  display:flex;justify-content:center;
+}
+button,input,select,textarea{font:inherit;color:inherit}
+button{background:none;border:0;cursor:pointer;padding:0}
+h1,h2,h3{margin:0}
+
+#phone{
+  width:100%;max-width:430px;background:var(--bg);
+  display:flex;flex-direction:column;height:100%;
+  position:relative;overflow:hidden;
+}
+@media(min-width:520px){
+  body{align-items:center;background:var(--surface-2)}
+  #phone{height:min(880px,96vh);border-radius:26px;box-shadow:var(--shadow);border:1px solid var(--border)}
+}
+
+/* ---------- Header ---------- */
+header{
+  flex-shrink:0;padding:14px 16px 10px;background:var(--surface);
+  border-bottom:1px solid var(--border);
+}
+.brand{display:flex;align-items:center;gap:9px;margin-bottom:12px}
+.brand .mark{
+  width:30px;height:30px;border-radius:9px;flex-shrink:0;
+  background:linear-gradient(160deg,var(--accent),#7d3418);
+  color:#fff;font-weight:800;font-size:14px;
+  display:flex;align-items:center;justify-content:center;letter-spacing:-.5px;
+}
+.brand h1{font-size:19px;font-weight:700;letter-spacing:-.3px;font-family:Georgia,serif}
+.brand .sub{margin-left:auto;font-size:12px;color:var(--muted)}
+.searchrow{display:flex;gap:8px}
+.search{
+  flex:1;position:relative;
+}
+.search input{
+  width:100%;padding:9px 12px 9px 32px;border-radius:10px;
+  border:1px solid var(--border);background:var(--bg);outline:none;font-size:15px;
+}
+.search input:focus{border-color:var(--accent)}
+.search .ico{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:13px}
+.iconbtn{
+  border:1px solid var(--border);border-radius:10px;background:var(--bg);
+  width:40px;display:flex;align-items:center;justify-content:center;font-size:17px;position:relative;
+}
+.iconbtn.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+.dot{position:absolute;top:5px;right:5px;width:7px;height:7px;border-radius:50%;background:var(--accent)}
+
+/* ---------- Main ---------- */
+main{flex:1;overflow-y:auto;overscroll-behavior:contain;padding-bottom:14px}
+.view{display:none;padding:12px 16px}
+.view.active{display:block}
+.meta{font-size:12.5px;color:var(--muted);margin:2px 0 10px}
+
+/* filter chips row */
+.activefilters{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.fchip{
+  display:inline-flex;align-items:center;gap:5px;padding:4px 8px;border-radius:999px;
+  background:var(--accent-soft);color:var(--accent);font-size:12px;font-weight:600;border:1px solid transparent;
+}
+.fchip b{font-weight:700}
+.fchip span{opacity:.65;font-size:13px}
+
+/* ---------- Book row ---------- */
+.booklist{display:flex;flex-direction:column;gap:8px}
+.book{
+  display:flex;gap:11px;padding:10px;background:var(--surface);
+  border:1px solid var(--border);border-radius:13px;text-align:left;width:100%;
+  transition:transform .08s;
+}
+.book:active{transform:scale(.985)}
+.cover{
+  width:46px;height:66px;border-radius:5px;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  color:#fff;font:700 19px/1 Georgia,serif;
+  box-shadow:inset -3px 0 6px rgba(0,0,0,.22);
+}
+.bmain{flex:1;min-width:0}
+.btitle{font-weight:650;font-size:15px;line-height:1.25;font-family:Georgia,serif}
+.bauthor{font-size:13px;color:var(--muted);margin-top:2px}
+.bseries{font-size:12px;color:var(--muted);margin-top:3px;font-style:italic}
+.brow{display:flex;align-items:center;gap:7px;margin-top:5px;flex-wrap:wrap}
+.stars{color:var(--star);font-size:12px;letter-spacing:.5px}
+.stars .off{color:var(--border)}
+.status{
+  display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:600;
+}
+.status::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.s-unread{color:var(--unread)} .s-reading{color:var(--reading)} .s-read{color:var(--read)}
+.gchip{
+  font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:999px;
+  background:var(--surface-2);color:var(--muted);white-space:nowrap;
+}
+.owner{
+  font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:999px;
+  background:var(--accent-soft);color:var(--accent);
+}
+.loanline{
+  margin-top:6px;font-size:11.5px;padding:4px 8px;border-radius:7px;
+  background:var(--surface-2);color:var(--muted);
+}
+.loanline.late{background:rgba(192,57,43,.1);color:var(--overdue);font-weight:600}
+
+.empty{text-align:center;padding:50px 20px;color:var(--muted)}
+.empty .big{font-size:40px;margin-bottom:10px}
+
+/* ---------- Detail ---------- */
+.back{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:14px;margin-bottom:14px}
+.dhead{display:flex;gap:14px;margin-bottom:18px}
+.dhead .cover{width:82px;height:118px;font-size:32px;border-radius:6px}
+.dtitle{font:700 21px/1.2 Georgia,serif;letter-spacing:-.2px}
+.dauthor{color:var(--muted);font-size:14px;margin-top:5px}
+.dmeta{color:var(--muted);font-size:12px;margin-top:8px;line-height:1.6}
+.sect{margin-bottom:20px}
+.sect > label{display:block;font-size:11.5px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+
+.seg{display:flex;background:var(--surface-2);border-radius:10px;padding:3px;gap:3px}
+.seg button{
+  flex:1;padding:8px 4px;border-radius:8px;font-size:13px;font-weight:600;color:var(--muted);
+}
+.seg button.on{background:var(--surface);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.1)}
+.seg button.on[data-v=unread]{color:var(--unread)}
+.seg button.on[data-v=reading]{color:var(--reading)}
+.seg button.on[data-v=read]{color:var(--read)}
+
+.ratepick{display:flex;gap:5px;align-items:center}
+.ratepick button{font-size:29px;line-height:1;color:var(--border)}
+.ratepick button.on{color:var(--star)}
+.ratepick .hint{margin-left:8px;font-size:12px;color:var(--muted)}
+
+.pillrow{display:flex;flex-wrap:wrap;gap:7px}
+.pill{
+  padding:6px 12px;border-radius:999px;border:1px solid var(--border);
+  font-size:13px;font-weight:600;color:var(--muted);background:var(--surface);
+}
+.pill.on{background:var(--accent);border-color:var(--accent);color:var(--accent-text)}
+.pill.add{border-style:dashed}
+
+.field{
+  width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:10px;
+  background:var(--surface);outline:none;font-size:15px;
+}
+.field:focus{border-color:var(--accent)}
+textarea.field{min-height:130px;resize:vertical;line-height:1.55}
+.twocol{display:flex;gap:8px}
+
+.loanbox{
+  border:1px solid var(--border);border-radius:12px;padding:12px;background:var(--surface);
+}
+.loanbox.open{border-color:var(--accent);background:var(--accent-soft)}
+.loanbox.late{border-color:var(--overdue);background:rgba(192,57,43,.08)}
+.loanbox .top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.loanbox .who{font-weight:650;font-size:14px}
+.loanbox .when{font-size:12px;color:var(--muted);margin-top:3px}
+.hist{font-size:12px;color:var(--muted);padding:7px 0;border-top:1px solid var(--border)}
+
+.btn{
+  padding:10px 16px;border-radius:10px;font-size:14px;font-weight:650;
+  background:var(--accent);color:var(--accent-text);
+}
+.btn.ghost{background:var(--surface-2);color:var(--text)}
+.btn.danger{background:transparent;color:var(--overdue);border:1px solid var(--border)}
+.btn.wide{width:100%;display:block;text-align:center}
+.btn.sm{padding:6px 11px;font-size:12.5px;border-radius:8px}
+
+/* ---------- Scan ---------- */
+.scanner{
+  aspect-ratio:4/3;border-radius:14px;background:#1a1713;position:relative;overflow:hidden;
+  display:flex;align-items:center;justify-content:center;margin-bottom:14px;
+}
+.scanner .frame{
+  width:74%;height:44%;border-radius:9px;position:relative;
+  box-shadow:0 0 0 2000px rgba(0,0,0,.32);
+}
+.scanner .frame i{position:absolute;width:24px;height:24px;border:3px solid var(--accent)}
+.scanner .frame i:nth-child(1){top:-2px;left:-2px;border-right:0;border-bottom:0;border-radius:8px 0 0 0}
+.scanner .frame i:nth-child(2){top:-2px;right:-2px;border-left:0;border-bottom:0;border-radius:0 8px 0 0}
+.scanner .frame i:nth-child(3){bottom:-2px;left:-2px;border-right:0;border-top:0;border-radius:0 0 0 8px}
+.scanner .frame i:nth-child(4){bottom:-2px;right:-2px;border-left:0;border-top:0;border-radius:0 0 8px 0}
+.scanline{
+  position:absolute;left:0;right:0;height:2px;background:var(--accent);
+  box-shadow:0 0 10px var(--accent);animation:scan 2.1s ease-in-out infinite;
+}
+@keyframes scan{0%,100%{top:4%}50%{top:96%}}
+.scanner .cap{position:absolute;bottom:12px;left:0;right:0;text-align:center;color:#e9dfd3;font-size:12px}
+
+.divider{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:12px;margin:16px 0}
+.divider::before,.divider::after{content:"";flex:1;height:1px;background:var(--border)}
+
+.found{
+  border:1px solid var(--accent);border-radius:13px;padding:13px;background:var(--accent-soft);margin-bottom:14px;
+}
+.found .tag{font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--accent);margin-bottom:9px}
+.suggest{
+  display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:5px 10px;border-radius:999px;
+  border:1px dashed var(--accent);color:var(--accent);font-weight:600;margin-top:8px;
+}
+
+/* ---------- Settings ---------- */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:13px;padding:14px;margin-bottom:12px}
+.card h3{font-size:14.5px;font-weight:700;margin-bottom:4px}
+.card p{font-size:12.5px;color:var(--muted);margin:0 0 12px}
+.listrow{display:flex;align-items:center;gap:9px;padding:9px 0;border-top:1px solid var(--border);font-size:14px}
+.swatch{width:13px;height:13px;border-radius:4px;flex-shrink:0}
+.listrow .n{flex:1}
+.listrow .c{font-size:12px;color:var(--muted)}
+.warn{
+  display:flex;gap:9px;padding:11px;border-radius:11px;background:rgba(192,57,43,.09);
+  color:var(--overdue);font-size:12.5px;margin-bottom:12px;align-items:flex-start;
+}
+
+/* ---------- Bottom nav ---------- */
+nav{
+  flex-shrink:0;display:flex;background:var(--surface);border-top:1px solid var(--border);
+  padding-bottom:env(safe-area-inset-bottom);
+}
+nav button{
+  flex:1;padding:8px 2px 9px;display:flex;flex-direction:column;align-items:center;gap:2px;
+  font-size:10.5px;font-weight:600;color:var(--muted);transition:transform .08s;
+}
+nav button:active{transform:scale(.93)}
+nav button.on{color:var(--accent)}
+nav .ni{font-size:21px;line-height:1.1}
+
+/* ---------- Sheet ---------- */
+.scrim{position:absolute;inset:0;background:rgba(20,14,8,.45);display:none;z-index:40}
+.scrim.show{display:block}
+.sheet{
+  position:absolute;left:0;right:0;bottom:0;z-index:50;background:var(--surface);
+  border-radius:20px 20px 0 0;padding:8px 18px calc(18px + env(safe-area-inset-bottom));
+  max-height:88%;overflow-y:auto;transform:translateY(100%);transition:transform .22s ease;
+}
+.sheet.show{transform:translateY(0)}
+.grab{width:38px;height:4px;border-radius:2px;background:var(--border);margin:0 auto 14px}
+.sheet h2{font-size:17px;font-weight:700;margin-bottom:14px;font-family:Georgia,serif}
+.sheet .sect{margin-bottom:16px}
+.sheetfoot{display:flex;gap:9px;margin-top:6px}
+.sheetfoot .btn{flex:1;text-align:center}
+
+.toast{
+  position:absolute;left:50%;bottom:78px;transform:translate(-50%,14px);
+  background:var(--text);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:13px;
+  font-weight:600;opacity:0;pointer-events:none;transition:.2s;z-index:60;max-width:88%;text-align:center;
+}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+</style>
+</head>
+<body>
+<div id="phone">
+
+  <header>
+    <div class="brand">
+      <div class="mark">BM</div>
+      <h1>Büchermonster</h1>
+      <div class="sub" id="hdrcount"></div>
+    </div>
+    <div class="searchrow" id="searchrow">
+      <div class="search">
+        <span class="ico">🔍</span>
+        <input id="q" type="search" placeholder="Titel, Autor, Reihe, Notiz…" autocomplete="off">
+      </div>
+      <button class="iconbtn" id="sortbtn" title="Sortierung">↕</button>
+      <button class="iconbtn" id="filterbtn" title="Filter">⚙</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- ============ REGAL ============ -->
+    <section class="view active" id="v-shelf">
+      <div id="activefilters" class="activefilters"></div>
+      <div class="meta" id="shelfmeta"></div>
+      <div class="booklist" id="booklist"></div>
+    </section>
+
+    <!-- ============ DETAIL ============ -->
+    <section class="view" id="v-detail"></section>
+
+    <!-- ============ HINZUFÜGEN ============ -->
+    <section class="view" id="v-add">
+      <div class="scanner">
+        <div class="frame"><i></i><i></i><i></i><i></i></div>
+        <div class="scanline"></div>
+        <div class="cap">Barcode auf den Buchrücken halten</div>
+      </div>
+      <button class="btn wide" onclick="simulateScan()">Scan simulieren</button>
+
+      <div class="divider">oder ISBN eintippen</div>
+      <div class="twocol">
+        <input class="field" id="isbnin" placeholder="978…" inputmode="numeric">
+        <button class="btn" onclick="lookupIsbn()">Suchen</button>
+      </div>
+      <div id="lookupresult" style="margin-top:14px"></div>
+
+      <div class="divider">oder ohne ISBN</div>
+      <button class="btn ghost wide" onclick="toast('Leeres Formular — im Klickdummy nicht ausgebaut')">Buch von Hand anlegen</button>
+    </section>
+
+    <!-- ============ AUSLEIHEN ============ -->
+    <section class="view" id="v-loans"></section>
+
+    <!-- ============ EINSTELLUNGEN ============ -->
+    <section class="view" id="v-settings">
+      <div class="warn">
+        <span>⚠️</span>
+        <div><b>Letztes Backup vor 47 Tagen.</b><br>Die Daten liegen nur auf diesem Gerät. Geht das Handy verloren, ist das Regal weg.</div>
+      </div>
+
+      <div class="card">
+        <h3>Export</h3>
+        <p>Exportiert die <b id="expcount">…</b> Bücher, die gerade im Regal gefiltert sind.</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn ghost sm" onclick="toast('PDF wird erzeugt … (Dummy)')">📄 PDF</button>
+          <button class="btn ghost sm" onclick="toast('XLSX wird erzeugt … (Dummy)')">📊 XLSX</button>
+          <button class="btn ghost sm" onclick="toast('Backup gespeichert (Dummy)')">💾 JSON-Backup</button>
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;color:var(--muted)">
+          <input type="checkbox" id="expall"> Statt Filter alle Bücher exportieren
+        </label>
+      </div>
+
+      <div class="card">
+        <h3>Genres</h3>
+        <p>Antippen zum Umbenennen oder Einfärben.</p>
+        <div id="genrelist"></div>
+        <button class="btn ghost sm" style="margin-top:12px" onclick="toast('Neues Genre anlegen (Dummy)')">+ Genre</button>
+      </div>
+
+      <div class="card">
+        <h3>Wem gehören die Bücher?</h3>
+        <p>Zwei Namen reichen, mehr geht auch. Danach lässt sich filtern.</p>
+        <div class="listrow" style="border-top:0"><div class="n">Mir</div><div class="c">Standard · 12 Bücher</div></div>
+        <div class="listrow"><div class="n">Adi</div><div class="c">3 Bücher</div></div>
+      </div>
+
+      <div class="card">
+        <h3>Daten wiederherstellen</h3>
+        <p>Ein Import ersetzt den kompletten Bestand, er ergänzt ihn nicht.</p>
+        <button class="btn danger sm" onclick="toast('Backup-Datei wählen (Dummy)')">Backup einspielen</button>
+      </div>
+
+      <p style="font-size:11.5px;color:var(--muted);text-align:center;padding:6px 0 10px">
+        Klickdummy · Fake-Daten · keine Datenbank
+      </p>
+    </section>
+  </main>
+
+  <nav id="nav">
+    <button data-t="shelf" class="on"><span class="ni">📚</span>Regal</button>
+    <button data-t="add"><span class="ni">📷</span>Hinzufügen</button>
+    <button data-t="loans"><span class="ni">🤝</span>Ausleihen</button>
+    <button data-t="settings"><span class="ni">⚙️</span>Einstellungen</button>
+  </nav>
+
+  <div class="scrim" id="scrim" onclick="closeSheets()"></div>
+
+  <!-- Filter-Sheet -->
+  <div class="sheet" id="sheet-filter">
+    <div class="grab"></div>
+    <h2>Filter</h2>
+    <div class="sect"><label>Status</label><div class="pillrow" id="f-status"></div></div>
+    <div class="sect"><label>Genre</label><div class="pillrow" id="f-genre"></div></div>
+    <div class="sect"><label>Mindestbewertung</label><div class="pillrow" id="f-rating"></div></div>
+    <div class="sect"><label>Gehört</label><div class="pillrow" id="f-owner"></div></div>
+    <div class="sect"><label>Ausleihe</label><div class="pillrow" id="f-loan"></div></div>
+    <div class="sect"><label>Reihe</label><div class="pillrow" id="f-series"></div></div>
+    <div class="sheetfoot">
+      <button class="btn ghost" onclick="resetFilters()">Zurücksetzen</button>
+      <button class="btn" onclick="closeSheets()">Fertig</button>
+    </div>
+  </div>
+
+  <!-- Sort-Sheet -->
+  <div class="sheet" id="sheet-sort">
+    <div class="grab"></div>
+    <h2>Sortieren nach</h2>
+    <div class="pillrow" id="f-sort" style="flex-direction:column;align-items:stretch"></div>
+    <div class="sheetfoot"><button class="btn" onclick="closeSheets()">Fertig</button></div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+</div>
+
+<script>
+/* =========================================================
+   Klickdummy — alles hart verdrahtet, nichts wird gespeichert
+   ========================================================= */
+
+const GENRES = [
+  {id:1,name:'Roman',        c:'#8d6e63'},
+  {id:2,name:'Fantasy',      c:'#6a4c93'},
+  {id:3,name:'Krimi',        c:'#37474f'},
+  {id:4,name:'Thriller',     c:'#b71c1c'},
+  {id:5,name:'Science-Fiction',c:'#00695c'},
+  {id:6,name:'Sachbuch',     c:'#1565c0'},
+  {id:7,name:'Jugendbuch',   c:'#ef6c00'},
+  {id:8,name:'Ratgeber',     c:'#558b2f'},
+];
+const gName = id => (GENRES.find(g=>g.id===id)||{}).name || '';
+const gColor = id => (GENRES.find(g=>g.id===id)||{}).c || '#999';
+
+const TODAY = new Date('2026-08-15');
+
+const BOOKS = [
+  {id:1, t:'Tintenherz', a:'Cornelia Funke', ser:'Tintenwelt', bd:1, st:'read', r:5, g:[2,7], o:'ich',
+   y:2003, p:576, isbn:'9783791504650', n:'Meggies Vater liest Figuren aus Büchern heraus. Der Anfang, den ich immer wieder lese.'},
+  {id:2, t:'Die Tribute von Panem – Tödliche Spiele', a:'Suzanne Collins', ser:'Die Tribute von Panem', bd:1, st:'read', r:4, g:[7,5], o:'ich',
+   y:2009, p:414, isbn:'9783789132186', n:''},
+  {id:3, t:'Der Distelfink', a:'Donna Tartt', ser:null, bd:null, st:'reading', r:0, g:[1], o:'ich',
+   y:2013, p:1024, isbn:'9783442313150', n:'Seite 340. Zieht sich in der Mitte, aber die Sprache ist es wert.'},
+  {id:4, t:'Eine kurze Geschichte der Menschheit', a:'Yuval Noah Harari', ser:null, bd:null, st:'unread', r:0, g:[6], o:'adi',
+   y:2013, p:528, isbn:'9783570552698', n:''},
+  {id:5, t:'Das Lied der Krähen', a:'Leigh Bardugo', ser:'Glory or Grave', bd:1, st:'read', r:5, g:[2,7], o:'ich',
+   y:2016, p:544, isbn:'9783426653791', n:'Kaz Brekker. Mehr muss man dazu nicht sagen.'},
+  {id:6, t:'Der Report der Magd', a:'Margaret Atwood', ser:null, bd:null, st:'read', r:4, g:[1,5], o:'ich',
+   y:1985, p:400, isbn:'9783492319089', n:''},
+  {id:7, t:'Die Känguru-Chroniken', a:'Marc-Uwe Kling', ser:'Känguru-Werke', bd:1, st:'read', r:5, g:[1], o:'adi',
+   y:2009, p:240, isbn:'9783548372570', n:''},
+  {id:8, t:'Verity', a:'Colleen Hoover', ser:null, bd:null, st:'reading', r:3, g:[4], o:'ich',
+   y:2021, p:384, isbn:'9783423218061', n:'Bin unschlüssig, ob mir das Ende gefällt.'},
+  {id:9, t:'Der Herr der Ringe – Die Gefährten', a:'J. R. R. Tolkien', ser:'Der Herr der Ringe', bd:1, st:'unread', r:0, g:[2], o:'adi',
+   y:1954, p:592, isbn:'9783608938289', n:''},
+  {id:10,t:'Achtsam morden', a:'Karsten Dusse', ser:'Achtsam morden', bd:1, st:'read', r:4, g:[3], o:'ich',
+   y:2019, p:432, isbn:'9783453424265', n:''},
+  {id:11,t:'Der Alchimist', a:'Paulo Coelho', ser:null, bd:null, st:'unread', r:0, g:[1], o:'ich',
+   y:1988, p:192, isbn:'9783257228380', n:''},
+  {id:12,t:'Kim Jiyoung, geboren 1982', a:'Cho Nam-Joo', ser:null, bd:null, st:'read', r:4, g:[1], o:'ich',
+   y:2016, p:208, isbn:'9783036958255', n:'Kurz, ruhig, hallt lange nach.'},
+  {id:13,t:'Das Café am Rande der Welt', a:'John Strelecky', ser:null, bd:null, st:'read', r:3, g:[8], o:'ich',
+   y:2007, p:128, isbn:'9783423209694', n:''},
+  {id:14,t:'Dark Matter', a:'Blake Crouch', ser:null, bd:null, st:'reading', r:0, g:[5,4], o:'ich',
+   y:2016, p:400, isbn:'9783442488872', n:''},
+  {id:15,t:'Harry Potter und der Stein der Weisen', a:'J. K. Rowling', ser:'Harry Potter', bd:1, st:'read', r:5, g:[2,7], o:'ich',
+   y:1997, p:336, isbn:'9783551551672', n:''},
+  {id:16,t:'Der Schwarm', a:'Frank Schätzing', ser:null, bd:null, st:'unread', r:0, g:[4,5], o:'adi',
+   y:2004, p:1000, isbn:'9783596515424', n:''},
+];
+
+// direction: 'out' = verliehen an, 'in' = geliehen von
+const LOANS = [
+  {id:1, bookId:9,  dir:'out', who:'Jonas',  from:'2026-06-02', due:'2026-09-30', back:null},
+  {id:2, bookId:14, dir:'in',  who:'Lisa',   from:'2026-05-20', due:'2026-08-12', back:null},
+  {id:3, bookId:5,  dir:'out', who:'Marie',  from:'2026-07-11', due:null,         back:null},
+  {id:4, bookId:1,  dir:'out', who:'Jonas',  from:'2025-11-04', due:'2025-12-15', back:'2025-12-10'},
+  {id:5, bookId:12, dir:'in',  who:'Mama',   from:'2025-09-01', due:null,         back:'2025-10-20'},
+];
+
+const STATUS = {unread:'Ungelesen', reading:'Lese gerade', read:'Gelesen'};
+const SORTS = [
+  {k:'title',   l:'Titel A–Z'},
+  {k:'titled',  l:'Titel Z–A'},
+  {k:'author',  l:'Autor A–Z'},
+  {k:'rating',  l:'Bewertung, beste zuerst'},
+  {k:'added',   l:'Zuletzt hinzugefügt'},
+  {k:'series',  l:'Reihe und Band'},
+];
+
+let F = {q:'', status:[], genre:[], rating:0, owner:'', loan:'', series:'', sort:'title'};
+
+/* ---------- Helper ---------- */
+const ARTICLES = /^(der|die|das|ein|eine|the|a|an)\s+/i;
+const titleSort = t => t.replace(ARTICLES,'').toLocaleLowerCase('de');
+const authorSort = a => { const p=a.trim().split(/\s+/); return (p.pop()+', '+p.join(' ')).toLocaleLowerCase('de'); };
+const dmy = s => s ? new Date(s).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'}) : '';
+const isLate = l => l.due && !l.back && new Date(l.due) < TODAY;
+const openLoan = id => LOANS.find(l=>l.bookId===id && !l.back);
+const loanHist = id => LOANS.filter(l=>l.bookId===id && l.back);
+
+function coverStyle(b){
+  const hue = (b.t.charCodeAt(0)*7 + b.t.length*13) % 360;
+  return `background:linear-gradient(150deg,hsl(${hue} 42% 42%),hsl(${(hue+34)%360} 46% 26%))`;
+}
+function starsHtml(r){
+  let s='';
+  for(let i=1;i<=5;i++) s += `<span class="${i<=r?'':'off'}">★</span>`;
+  return `<span class="stars">${s}</span>`;
+}
+function toast(m){
+  const t=document.getElementById('toast');
+  t.textContent=m; t.classList.add('show');
+  clearTimeout(t._x); t._x=setTimeout(()=>t.classList.remove('show'),2100);
+}
+
+/* ---------- Filter + Sortierung ---------- */
+function filtered(){
+  let out = BOOKS.filter(b=>{
+    if(F.q){
+      const hay = (b.t+' '+b.a+' '+(b.ser||'')+' '+b.n).toLocaleLowerCase('de');
+      if(!hay.includes(F.q.toLocaleLowerCase('de'))) return false;
+    }
+    if(F.status.length && !F.status.includes(b.st)) return false;
+    if(F.genre.length && !b.g.some(g=>F.genre.includes(g))) return false;
+    if(F.rating && b.r < F.rating) return false;
+    if(F.owner && b.o !== F.owner) return false;
+    if(F.series && b.ser !== F.series) return false;
+    if(F.loan){
+      const l = openLoan(b.id);
+      if(F.loan==='out'  && !(l && l.dir==='out')) return false;
+      if(F.loan==='in'   && !(l && l.dir==='in'))  return false;
+      if(F.loan==='late' && !(l && isLate(l)))     return false;
+    }
+    return true;
+  });
+
+  const cmp = {
+    title:  (a,b)=> titleSort(a.t).localeCompare(titleSort(b.t),'de'),
+    titled: (a,b)=> titleSort(b.t).localeCompare(titleSort(a.t),'de'),
+    author: (a,b)=> authorSort(a.a).localeCompare(authorSort(b.a),'de'),
+    rating: (a,b)=> b.r-a.r || titleSort(a.t).localeCompare(titleSort(b.t),'de'),
+    added:  (a,b)=> b.id-a.id,
+    series: (a,b)=>{
+      if(!a.ser && !b.ser) return titleSort(a.t).localeCompare(titleSort(b.t),'de');
+      if(!a.ser) return 1;
+      if(!b.ser) return -1;
+      return a.ser.localeCompare(b.ser,'de') || (a.bd||0)-(b.bd||0);
+    }
+  }[F.sort];
+  return out.sort(cmp);
+}
+
+/* ---------- Regal ---------- */
+function renderShelf(){
+  const rows = filtered();
+  document.getElementById('hdrcount').textContent = BOOKS.length + ' Bücher';
+  document.getElementById('expcount').textContent = rows.length;
+  document.getElementById('shelfmeta').textContent =
+    rows.length === BOOKS.length
+      ? `${rows.length} Bücher · sortiert nach ${SORTS.find(s=>s.k===F.sort).l.toLowerCase()}`
+      : `${rows.length} von ${BOOKS.length} Büchern`;
+
+  renderActiveFilters();
+
+  const list = document.getElementById('booklist');
+  if(!rows.length){
+    list.innerHTML = `<div class="empty"><div class="big">🐉</div>
+      Kein Buch passt zu diesem Filter.<br><button class="btn ghost sm" style="margin-top:12px" onclick="resetFilters()">Filter zurücksetzen</button></div>`;
+    return;
+  }
+
+  list.innerHTML = rows.map(b=>{
+    const l = openLoan(b.id);
+    let loanHtml = '';
+    if(l){
+      const late = isLate(l);
+      const dir = l.dir==='out' ? 'Verliehen an' : 'Geliehen von';
+      const due = l.due ? ` · zurück bis ${dmy(l.due)}` : '';
+      loanHtml = `<div class="loanline ${late?'late':''}">${late?'⏰ ':''}${dir} ${l.who}${due}</div>`;
+    }
+    return `<button class="book" onclick="openDetail(${b.id})">
+      <div class="cover" style="${coverStyle(b)}">${b.t[0]}</div>
+      <div class="bmain">
+        <div class="btitle">${b.t}</div>
+        <div class="bauthor">${b.a}</div>
+        ${b.ser?`<div class="bseries">${b.ser} · Band ${b.bd}</div>`:''}
+        <div class="brow">
+          <span class="status s-${b.st}">${STATUS[b.st]}</span>
+          ${b.r?starsHtml(b.r):''}
+          ${b.o==='adi'?'<span class="owner">Buch von Adi</span>':''}
+          ${b.g.map(g=>`<span class="gchip">${gName(g)}</span>`).join('')}
+        </div>
+        ${loanHtml}
+      </div>
+    </button>`;
+  }).join('');
+}
+
+function renderActiveFilters(){
+  const c=[];
+  F.status.forEach(s=>c.push([STATUS[s],()=>{F.status=F.status.filter(x=>x!==s)}]));
+  F.genre.forEach(g=>c.push([gName(g),()=>{F.genre=F.genre.filter(x=>x!==g)}]));
+  if(F.rating) c.push([`ab ${F.rating} ★`,()=>F.rating=0]);
+  if(F.owner)  c.push([F.owner==='adi'?'Buch von Adi':'Gehört mir',()=>F.owner='']);
+  if(F.loan)   c.push([{out:'Verliehen',in:'Geliehen',late:'Überfällig'}[F.loan],()=>F.loan='']);
+  if(F.series) c.push([F.series,()=>F.series='']);
+  if(F.q)      c.push([`„${F.q}"`,()=>{F.q='';document.getElementById('q').value=''}]);
+
+  const box=document.getElementById('activefilters');
+  box.innerHTML = c.map((x,i)=>`<button class="fchip" data-i="${i}"><b>${x[0]}</b><span>✕</span></button>`).join('');
+  box.querySelectorAll('.fchip').forEach((el,i)=>el.onclick=()=>{c[i][1]();renderShelf();renderFilterSheet()});
+  document.getElementById('filterbtn').classList.toggle('on', c.length>0);
+}
+
+/* ---------- Detail ---------- */
+let cur = null;
+function openDetail(id){
+  cur = BOOKS.find(b=>b.id===id);
+  renderDetail();
+  show('detail');
+}
+function renderDetail(){
+  const b = cur, l = openLoan(b.id), hist = loanHist(b.id);
+  let loanHtml;
+  if(l){
+    const late = isLate(l);
+    loanHtml = `<div class="loanbox ${late?'late':'open'}">
+      <div class="top">
+        <div>
+          <div class="who">${l.dir==='out'?'Verliehen an':'Geliehen von'} ${l.who}</div>
+          <div class="when">seit ${dmy(l.from)}${l.due?` · zurück bis ${dmy(l.due)}`:' · kein Termin'}${late?' · überfällig':''}</div>
+        </div>
+        <button class="btn sm" onclick="giveBack(${l.id})">Zurück</button>
+      </div>
+    </div>`;
+  } else {
+    loanHtml = `<div class="pillrow">
+      <button class="pill" onclick="toast('Formular: an wen, bis wann (Dummy)')">Verleihen</button>
+      <button class="pill" onclick="toast('Formular: von wem, bis wann (Dummy)')">Als geliehen eintragen</button>
+    </div>`;
+  }
+
+  document.getElementById('v-detail').innerHTML = `
+    <button class="back" onclick="show('shelf')">← Regal</button>
+
+    <div class="dhead">
+      <div class="cover" style="${coverStyle(b)}">${b.t[0]}</div>
+      <div>
+        <div class="dtitle">${b.t}</div>
+        <div class="dauthor">${b.a}</div>
+        <div class="dmeta">${b.y} · ${b.p} Seiten<br>ISBN ${b.isbn}</div>
+      </div>
+    </div>
+
+    <div class="sect">
+      <label>Status</label>
+      <div class="seg">
+        ${Object.entries(STATUS).map(([k,v])=>
+          `<button data-v="${k}" class="${b.st===k?'on':''}" onclick="setStatus('${k}')">${v}</button>`).join('')}
+      </div>
+    </div>
+
+    <div class="sect">
+      <label>Bewertung</label>
+      <div class="ratepick">
+        ${[1,2,3,4,5].map(i=>`<button class="${i<=b.r?'on':''}" onclick="setRating(${i})">★</button>`).join('')}
+        <span class="hint">${b.r?`${b.r} von 5 · nochmal tippen löscht`:'noch nicht bewertet'}</span>
+      </div>
+    </div>
+
+    <div class="sect">
+      <label>Genre</label>
+      <div class="pillrow">
+        ${GENRES.map(g=>`<button class="pill ${b.g.includes(g.id)?'on':''}" onclick="toggleGenre(${g.id})">${g.name}</button>`).join('')}
+      </div>
+    </div>
+
+    <div class="sect">
+      <label>Reihe</label>
+      ${b.ser
+        ? `<div class="twocol">
+             <input class="field" value="${b.ser}" style="flex:2">
+             <input class="field" value="${b.bd}" style="flex:0 0 72px" inputmode="numeric">
+           </div>`
+        : `<button class="pill add" onclick="toast('Reihe wählen oder neu anlegen (Dummy)')">+ Zu einer Reihe zuordnen</button>`}
+    </div>
+
+    <div class="sect">
+      <label>Gehört</label>
+      <div class="seg">
+        <button class="${b.o==='ich'?'on':''}" onclick="setOwner('ich')">Mir</button>
+        <button class="${b.o==='adi'?'on':''}" onclick="setOwner('adi')">Adi</button>
+      </div>
+    </div>
+
+    <div class="sect">
+      <label>Ausleihe</label>
+      ${loanHtml}
+      ${hist.length?`<div style="margin-top:10px">${hist.map(h=>
+        `<div class="hist">${h.dir==='out'?'an':'von'} ${h.who} · ${dmy(h.from)} – ${dmy(h.back)}</div>`).join('')}</div>`:''}
+    </div>
+
+    <div class="sect">
+      <label>Notizen</label>
+      <textarea class="field" id="notes" placeholder="Was dir zu dem Buch einfällt…">${b.n}</textarea>
+    </div>
+
+    <button class="btn danger wide" onclick="toast('Buch löschen — mit Rückfrage (Dummy)')">Buch aus dem Regal löschen</button>
+    <div style="height:14px"></div>
+  `;
+  const ta=document.getElementById('notes');
+  ta.onblur=()=>{ if(ta.value!==b.n){ b.n=ta.value; toast('Notiz gespeichert'); } };
+}
+
+function setStatus(s){ cur.st = s; renderDetail(); renderShelf(); toast('Status: '+STATUS[s]); }
+function setRating(i){ cur.r = (cur.r===i?0:i); renderDetail(); renderShelf(); }
+function toggleGenre(g){
+  cur.g = cur.g.includes(g) ? cur.g.filter(x=>x!==g) : [...cur.g,g];
+  renderDetail(); renderShelf();
+}
+function setOwner(o){ cur.o=o; renderDetail(); renderShelf(); }
+function giveBack(loanId){
+  const l = LOANS.find(x=>x.id===loanId);
+  l.back = '2026-08-15';
+  renderDetail(); renderShelf(); renderLoans();
+  toast('Als zurückgegeben eingetragen');
+}
+
+/* ---------- Ausleihen ---------- */
+function renderLoans(){
+  const open = LOANS.filter(l=>!l.back);
+  const out = open.filter(l=>l.dir==='out').sort((a,b)=>isLate(b)-isLate(a));
+  const inn = open.filter(l=>l.dir==='in').sort((a,b)=>isLate(b)-isLate(a));
+  const late = open.filter(isLate).length;
+
+  const card = l => {
+    const b = BOOKS.find(x=>x.id===l.bookId), lt = isLate(l);
+    return `<button class="book" style="${lt?'border-color:var(--overdue)':''}" onclick="openDetail(${b.id})">
+      <div class="cover" style="${coverStyle(b)}">${b.t[0]}</div>
+      <div class="bmain">
+        <div class="btitle">${b.t}</div>
+        <div class="bauthor">${b.a}</div>
+        <div class="loanline ${lt?'late':''}" style="margin-top:6px">
+          ${lt?'⏰ überfällig · ':''}${l.dir==='out'?'bei':'von'} <b>${l.who}</b> seit ${dmy(l.from)}${l.due?` · bis ${dmy(l.due)}`:''}
+        </div>
+      </div>
+    </button>`;
+  };
+
+  document.getElementById('v-loans').innerHTML = `
+    ${late?`<div class="warn"><span>⏰</span><div><b>${late} Rückgabe${late>1?'n':''}</b> ${late>1?'sind':'ist'} überfällig.</div></div>`:''}
+    <div class="meta">Ich habe verliehen</div>
+    <div class="booklist">${out.length?out.map(card).join(''):'<div class="empty">Nichts verliehen.</div>'}</div>
+    <div class="meta" style="margin-top:20px">Ich habe geliehen</div>
+    <div class="booklist">${inn.length?inn.map(card).join(''):'<div class="empty">Nichts geliehen.</div>'}</div>
+  `;
+}
+
+/* ---------- Scan / Lookup ---------- */
+function simulateScan(){
+  document.getElementById('isbnin').value = '9783764531089';
+  toast('Barcode erkannt: 978-3-7645-3108-9');
+  setTimeout(lookupIsbn, 450);
+}
+function lookupIsbn(){
+  const el = document.getElementById('lookupresult');
+  el.innerHTML = `<div style="text-align:center;color:var(--muted);font-size:13px;padding:14px">Google Books wird abgefragt…</div>`;
+  setTimeout(()=>{
+    el.innerHTML = `
+      <div class="found">
+        <div class="tag">Gefunden bei Google Books</div>
+        <div style="display:flex;gap:12px">
+          <div class="cover" style="background:linear-gradient(150deg,hsl(268 42% 42%),hsl(302 46% 26%))">D</div>
+          <div style="flex:1;min-width:0">
+            <div class="btitle">Drachenreiter</div>
+            <div class="bauthor">Cornelia Funke</div>
+            <div class="dmeta" style="margin-top:6px">Cecilie Dressler Verlag · 2004 · 448 Seiten</div>
+          </div>
+        </div>
+        <div style="margin-top:11px;font-size:12.5px;color:var(--muted)">
+          Erkannt aus <i>„Juvenile Fiction / Fantasy &amp; Magic"</i>:
+        </div>
+        <div class="pillrow" style="margin-top:7px">
+          <span class="pill on">Fantasy</span>
+          <span class="pill on">Jugendbuch</span>
+        </div>
+        <div class="suggest">Reihe „Drachenreiter", Band 1 erkannt — übernehmen?</div>
+      </div>
+      <div class="sect">
+        <label>Status</label>
+        <div class="seg">
+          <button class="on" data-v="unread">Ungelesen</button>
+          <button data-v="reading">Lese gerade</button>
+          <button data-v="read">Gelesen</button>
+        </div>
+      </div>
+      <div class="sect">
+        <label>Gehört</label>
+        <div class="seg"><button class="on">Mir</button><button>Adi</button></div>
+      </div>
+      <button class="btn wide" onclick="toast('Ins Regal gestellt (Dummy)')">Ins Regal stellen</button>
+      <div style="height:10px"></div>`;
+  }, 700);
+}
+
+/* ---------- Sheets ---------- */
+function renderFilterSheet(){
+  const pr=(id,items,active,fn)=>{
+    const el=document.getElementById(id);
+    el.innerHTML=items.map((it,i)=>`<button class="pill ${active(it)?'on':''}" data-i="${i}">${it.l}</button>`).join('');
+    el.querySelectorAll('.pill').forEach((el2,i)=>el2.onclick=()=>{fn(items[i]);renderShelf();renderFilterSheet()});
+  };
+  pr('f-status', Object.entries(STATUS).map(([k,l])=>({k,l})),
+     it=>F.status.includes(it.k),
+     it=>F.status = F.status.includes(it.k)?F.status.filter(x=>x!==it.k):[...F.status,it.k]);
+
+  pr('f-genre', GENRES.map(g=>({k:g.id,l:g.name})),
+     it=>F.genre.includes(it.k),
+     it=>F.genre = F.genre.includes(it.k)?F.genre.filter(x=>x!==it.k):[...F.genre,it.k]);
+
+  pr('f-rating', [1,2,3,4,5].map(n=>({k:n,l:'ab '+n+' ★'})),
+     it=>F.rating===it.k, it=>F.rating = F.rating===it.k?0:it.k);
+
+  pr('f-owner', [{k:'ich',l:'Mir'},{k:'adi',l:'Adi'}],
+     it=>F.owner===it.k, it=>F.owner = F.owner===it.k?'':it.k);
+
+  pr('f-loan', [{k:'out',l:'Verliehen'},{k:'in',l:'Geliehen'},{k:'late',l:'Überfällig'}],
+     it=>F.loan===it.k, it=>F.loan = F.loan===it.k?'':it.k);
+
+  const sers=[...new Set(BOOKS.filter(b=>b.ser).map(b=>b.ser))].sort((a,b)=>a.localeCompare(b,'de'));
+  pr('f-series', sers.map(s=>({k:s,l:s})),
+     it=>F.series===it.k, it=>F.series = F.series===it.k?'':it.k);
+}
+function renderSortSheet(){
+  const el=document.getElementById('f-sort');
+  el.innerHTML=SORTS.map(s=>`<button class="pill ${F.sort===s.k?'on':''}" style="text-align:left">${s.l}</button>`).join('');
+  el.querySelectorAll('.pill').forEach((b,i)=>b.onclick=()=>{F.sort=SORTS[i].k;renderSortSheet();renderShelf();closeSheets()});
+}
+function openSheet(id){
+  renderFilterSheet(); renderSortSheet();
+  document.getElementById('scrim').classList.add('show');
+  document.getElementById(id).classList.add('show');
+}
+function closeSheets(){
+  document.getElementById('scrim').classList.remove('show');
+  document.querySelectorAll('.sheet').forEach(s=>s.classList.remove('show'));
+}
+function resetFilters(){
+  F = {...F, q:'', status:[], genre:[], rating:0, owner:'', loan:'', series:''};
+  document.getElementById('q').value='';
+  renderShelf(); renderFilterSheet();
+}
+
+/* ---------- Navigation ---------- */
+function show(tab){
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.getElementById('v-'+tab).classList.add('active');
+  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on', b.dataset.t===tab));
+  document.getElementById('searchrow').style.display = (tab==='shelf')?'flex':'none';
+  document.querySelector('main').scrollTop = 0;
+  if(tab==='loans') renderLoans();
+  if(tab==='shelf') renderShelf();
+}
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>show(b.dataset.t));
+document.getElementById('filterbtn').onclick=()=>openSheet('sheet-filter');
+document.getElementById('sortbtn').onclick=()=>openSheet('sheet-sort');
+document.getElementById('q').oninput=e=>{F.q=e.target.value;renderShelf()};
+
+/* ---------- Start ---------- */
+renderShelf();
+renderFilterSheet();
+renderSortSheet();
+document.getElementById('genrelist').innerHTML = GENRES.map(g=>
+  `<div class="listrow"><span class="swatch" style="background:${g.c}"></span>
+   <span class="n">${g.name}</span>
+   <span class="c">${BOOKS.filter(b=>b.g.includes(g.id)).length}</span></div>`).join('');
+</script>
+</body>
+</html>

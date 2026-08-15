@@ -1,0 +1,108 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+  Farbschema an genau einer Stelle. Tailwind referenziert diese Variablen
+  (siehe tailwind.config.js), deshalb braucht keine Klasse eine dark:-Variante.
+  Werte sind rohe RGB-Kanäle, damit Tailwind-Opacity (bg-surface/60) funktioniert.
+*/
+@layer base {
+  :root {
+    --c-canvas: 250 247 242;
+    --c-surface: 255 255 255;
+    --c-surface2: 243 237 228;
+    --c-ink: 32 27 22;
+    --c-muted: 122 111 101;
+    --c-line: 231 222 210;
+    --c-accent: 180 85 45;
+    --c-accent-soft: 247 233 225;
+    --c-accent-ink: 255 255 255;
+    --c-star: 221 154 21;
+    --c-unread: 139 129 119;
+    --c-reading: 47 125 109;
+    --c-read: 74 124 63;
+    --c-overdue: 192 57 43;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --c-canvas: 22 19 15;
+      --c-surface: 33 28 23;
+      --c-surface2: 42 35 29;
+      --c-ink: 242 236 228;
+      --c-muted: 161 149 138;
+      --c-line: 53 45 37;
+      --c-accent: 229 131 79;
+      --c-accent-soft: 58 36 25;
+      --c-accent-ink: 26 18 8;
+      --c-star: 232 181 66;
+      --c-unread: 139 129 119;
+      --c-reading: 74 167 147;
+      --c-read: 109 168 92;
+      --c-overdue: 224 107 92;
+    }
+  }
+
+  html,
+  body,
+  #app {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-canvas text-ink antialiased;
+    -webkit-tap-highlight-color: transparent;
+    padding-top: env(safe-area-inset-top);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+
+  /* Sonst zoomt iOS beim Fokussieren in jedes Eingabefeld hinein. */
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition active:scale-95;
+  }
+  .btn-primary {
+    @apply btn bg-accent text-accent-ink;
+  }
+  .btn-ghost {
+    @apply btn bg-surface2 text-ink;
+  }
+  .btn-danger {
+    @apply btn border border-line bg-transparent text-overdue;
+  }
+  .btn-sm {
+    @apply rounded-md px-3 py-1.5 text-xs;
+  }
+
+  .input {
+    @apply w-full rounded-lg border border-line bg-surface px-3 py-2 text-ink placeholder-muted outline-none focus:border-accent;
+  }
+
+  .card {
+    @apply rounded-xl border border-line bg-surface p-4;
+  }
+
+  .chip {
+    @apply inline-flex items-center rounded-full bg-surface2 px-2 py-0.5 text-[10.5px] font-semibold text-muted;
+  }
+
+  .pill {
+    @apply rounded-full border border-line bg-surface px-3 py-1.5 text-sm font-semibold text-muted transition active:scale-95;
+  }
+  .pill-on {
+    @apply border-accent bg-accent text-accent-ink;
+  }
+
+  .label {
+    @apply mb-2 block text-[11.5px] font-bold uppercase tracking-wider text-muted;
+  }
+}
