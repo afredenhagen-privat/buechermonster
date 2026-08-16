@@ -3,6 +3,7 @@ import { computed, ref } from 'vue';
 import BookRow from '@/components/BookRow.vue';
 import BottomSheet from '@/components/BottomSheet.vue';
 import FilterSheet from '@/components/FilterSheet.vue';
+import ScanButton from '@/components/ScanButton.vue';
 import { useBooksStore, useGenresStore, useOwnersStore, useSeriesStore, useSettingsStore } from '@/stores';
 import { SORT_OPTIONS, countActiveFilters, type SortKey } from '@/services/filters';
 import { pluralBooks } from '@/services/display';
@@ -61,7 +62,8 @@ function pickSort(key: SortKey) {
 </script>
 
 <template>
-  <div class="px-4 pb-6 pt-3">
+  <!-- pb-28 hält die letzte Zeile frei vom schwebenden Scan-Knopf. -->
+  <div class="px-4 pb-28 pt-3">
     <div class="mb-3 flex gap-2">
       <div class="relative flex-1">
         <span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs text-muted">
@@ -151,6 +153,8 @@ function pickSort(key: SortKey) {
         Filter zurücksetzen
       </button>
     </div>
+
+    <ScanButton />
 
     <FilterSheet v-model="showFilter" />
 

@@ -123,9 +123,14 @@ export function sortBooks(books: readonly Book[], key: SortKey, ctx: FilterConte
     // die Daten nicht hergeben.
     yearDesc: (a, b) => byYear(a, b, -1) || byTitle(a, b),
     yearAsc: (a, b) => byYear(a, b, 1) || byTitle(a, b),
-    // ISO-Zeitstempel sortieren als Zeichenketten korrekt, dafür braucht es
-    // keinen Kollator — der würde die Datumsteile nur als Zahlen missdeuten.
-    added: (a, b) => (a.addedAt < b.addedAt ? 1 : a.addedAt > b.addedAt ? -1 : 0) || byTitle(a, b),
+    // Gemeint ist, wann das Buch ins Regal kam — bei einem lange gewünschten
+    // Buch ist das nicht der Zeitpunkt des Anlegens. ISO-Zeitstempel sortieren
+    // als Zeichenketten korrekt, dafür braucht es keinen Kollator.
+    added: (a, b) => {
+      const left = a.shelvedAt ?? a.addedAt;
+      const right = b.shelvedAt ?? b.addedAt;
+      return (left < right ? 1 : left > right ? -1 : 0) || byTitle(a, b);
+    },
     series: (a, b) => {
       // Bücher ohne Reihe hängen hinten dran, sonst reißen sie die Bände auseinander.
       if (a.seriesId === null && b.seriesId === null) return byTitle(a, b);

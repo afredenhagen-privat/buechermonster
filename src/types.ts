@@ -11,6 +11,15 @@ export type BookStatus = 'unread' | 'reading' | 'read';
 /** 'out' = ich habe verliehen, 'in' = ich habe geliehen. */
 export type LoanDirection = 'out' | 'in';
 
+/**
+ * Wo ein Buch steht: im Schrank oder erst auf der Wunschliste.
+ *
+ * Bewusst nicht `status` genannt — so heißt in diesem Projekt bereits der
+ * Lesestatus, und zwei Felder namens Status wären genau der Begriffskonflikt,
+ * nach dem hinterher jeder fragt.
+ */
+export type BookPlace = 'shelf' | 'wish';
+
 export const BOOK_STATUSES: readonly BookStatus[] = ['unread', 'reading', 'read'] as const;
 
 export const STATUS_LABEL: Record<BookStatus, string> = {
@@ -36,6 +45,8 @@ export interface Book {
   language: string | null;
   /** Base64-Miniatur, damit Cover auch ohne Netz da sind. */
   coverDataUrl: string | null;
+  /** Regal oder Wunschliste. Bestimmt, in welcher Ansicht das Buch auftaucht. */
+  place: BookPlace;
   status: BookStatus;
   /** 0 heißt nicht bewertet, 1–5 sind Sterne. Nie null. */
   rating: number;
@@ -44,6 +55,12 @@ export interface Book {
   seriesIndex: number | null;
   notes: string;
   addedAt: string;
+  /**
+   * Wann das Buch ins Regal kam. Bei einem Wunsch null, beim Verschieben
+   * gesetzt. Die Sortierung „zuletzt hinzugefügt" meint diesen Zeitpunkt —
+   * sonst stünde ein lange gewünschtes Buch nach dem Einräumen ganz hinten.
+   */
+  shelvedAt: string | null;
   updatedAt: string;
   finishedAt: string | null;
 }

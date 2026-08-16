@@ -9,7 +9,7 @@ import {
   type SortKey,
 } from '@/services/filters';
 import { authorSortKey, titleSortKey } from '@/services/sortKeys';
-import type { Book, BookStatus } from '@/types';
+import type { Book, BookPlace, BookStatus } from '@/types';
 import { useGenresStore } from './genresStore';
 import { useLoansStore } from './loansStore';
 import { useOwnersStore } from './ownersStore';
@@ -26,6 +26,8 @@ export interface NewBookInput {
   pageCount?: number | null;
   language?: string | null;
   coverDataUrl?: string | null;
+  /** Vorgabe ist das Regal; die Wunschliste wird beim Erfassen ausgewählt. */
+  place?: BookPlace;
   status?: BookStatus;
   rating?: number;
   ownerId?: number | null;
@@ -43,6 +45,10 @@ export const useBooksStore = defineStore('books', {
     loaded: false,
     filter: { ...EMPTY_FILTER } as BookFilter,
     sort: 'title' as SortKey,
+    // Regal und Wunschliste haben getrennte Such- und Sortierzustände. Sonst
+    // filtert man im Regal nach Fantasy und findet die Wunschliste leer vor.
+    wishFilter: { ...EMPTY_FILTER } as BookFilter,
+    wishSort: 'title' as SortKey,
   }),
 
   getters: {
@@ -51,11 +57,20 @@ export const useBooksStore = defineStore('books', {
       (id: number): Book | undefined =>
         state.books.find((b) => b.id === id),
 
-    /** Für die Dublettenwarnung beim Scannen. */
+    /** Für die Dublettenwarnung beim Scannen — sucht bewusst überall. */
     byIsbn13:
       (state) =>
       (isbn13: string | null): Book | undefined =>
         isbn13 === null ? undefined : state.books.find((b) => b.isbn13 === isbn13),
+
+    /*
+      Ab hier führen genau zwei Wege an die Bücher: `shelfBooks` und
+      `wishBooks`. Ansichten greifen nie auf `books` zu — sonst zählt
+      irgendwann ein Zähler Wünsche als Bestand mit, und niemand merkt es.
+    */
+    shelfBooks: (state): Book[] => state.books.filter((b) => b.place === 'shelf'),
+
+    wishBooks: (state): Book[] => state.books.filter((b) => b.place === 'wish'),
 
     filterContext(): FilterContext {
       const genres = useGenresStore();
@@ -72,30 +87,44 @@ export const useBooksStore = defineStore('books', {
     /** Was im Regal steht: gefiltert und sortiert, in dieser Reihenfolge. */
     visibleBooks(state): Book[] {
       const ctx = this.filterContext;
-      return sortBooks(filterBooks(state.books, state.filter, ctx), state.sort, ctx);
+      return sortBooks(filterBooks(this.shelfBooks, state.filter, ctx), state.sort, ctx);
     },
 
-    stats(state) {
-      const count = (status: BookStatus) => state.books.filter((b) => b.status === status).length;
+    /** Die Wunschliste, mit eigener Suche und Sortierung. */
+    visibleWishes(state): Book[] {
+      const ctx = this.filterContext;
+      return sortBooks(filterBooks(this.wishBooks, state.wishFilter, ctx), state.wishSort, ctx);
+    },
+
+    stats(): { total: number; unread: number; reading: number; read: number; wishes: number } {
+      const shelf = this.shelfBooks;
+      const count = (status: BookStatus) => shelf.filter((b) => b.status === status).length;
       return {
-        total: state.books.length,
+        total: shelf.length,
         unread: count('unread'),
         reading: count('reading'),
         read: count('read'),
+        wishes: this.wishBooks.length,
       };
     },
 
-    booksOfSeries:
-      (state) =>
-      (seriesId: number): Book[] =>
-        state.books
+    booksOfSeries(): (seriesId: number) => Book[] {
+      return (seriesId) =>
+        this.shelfBooks
           .filter((b) => b.seriesId === seriesId)
-          .sort((a, b) => (a.seriesIndex ?? 0) - (b.seriesIndex ?? 0)),
+          .sort((a, b) => (a.seriesIndex ?? 0) - (b.seriesIndex ?? 0));
+    },
 
-    booksOfOwner:
-      (state) =>
-      (ownerId: number): number =>
-        state.books.filter((b) => b.ownerId === ownerId).length,
+    booksOfOwner(): (ownerId: number) => number {
+      return (ownerId) => this.shelfBooks.filter((b) => b.ownerId === ownerId).length;
+    },
+
+    /** Wie viele Bücher im Regal dieses Genre tragen — ohne Wünsche. */
+    shelfCountOfGenre(): (genreId: number) => number {
+      const genres = useGenresStore();
+      return (genreId) =>
+        this.shelfBooks.filter((b) => genres.genreIdsOf(b.id).includes(genreId)).length;
+    },
   },
 
   actions: {
@@ -111,6 +140,7 @@ export const useBooksStore = defineStore('books', {
       const authors = (input.authors ?? []).map((a) => a.trim()).filter(Boolean);
       const now = new Date().toISOString();
       const status = input.status ?? 'unread';
+      const place = input.place ?? 'shelf';
 
       const book: Omit<Book, 'id'> = {
         title,
@@ -125,13 +155,17 @@ export const useBooksStore = defineStore('books', {
         pageCount: input.pageCount ?? null,
         language: input.language ?? null,
         coverDataUrl: input.coverDataUrl ?? null,
+        place,
         status,
         rating: clampRating(input.rating ?? 0),
-        ownerId: input.ownerId ?? useOwnersStore().defaultOwnerId,
+        // Ein Wunsch gehört noch niemandem — der Besitzer wird erst gesetzt,
+        // wenn das Buch tatsächlich im Schrank steht.
+        ownerId: place === 'wish' ? null : (input.ownerId ?? useOwnersStore().defaultOwnerId),
         seriesId: input.seriesId ?? null,
         seriesIndex: input.seriesIndex ?? null,
         notes: input.notes ?? '',
         addedAt: now,
+        shelvedAt: place === 'shelf' ? now : null,
         updatedAt: now,
         finishedAt: status === 'read' ? now : null,
       };
@@ -235,8 +269,44 @@ export const useBooksStore = defineStore('books', {
       await series.pruneUnused();
     },
 
+    /**
+     * „Hab ich bekommen": der Wunsch wird zum Regalbuch. Der Besitzer wird
+     * dabei auf die Vorbelegung gesetzt, weil ein Wunsch keinen hatte, und
+     * `shelvedAt` markiert den Zeitpunkt fürs „zuletzt hinzugefügt".
+     */
+    async moveToShelf(id: number): Promise<void> {
+      const book = this.byId(id);
+      if (!book) throw new Error('Dieses Buch gibt es nicht.');
+      if (book.place === 'shelf') return;
+
+      await this.update(id, {
+        place: 'shelf',
+        shelvedAt: new Date().toISOString(),
+        ownerId: book.ownerId ?? useOwnersStore().defaultOwnerId,
+      });
+    },
+
+    /** Korrekturweg, wenn beim Erfassen der Schalter falsch stand. */
+    async moveToWishlist(id: number): Promise<void> {
+      const book = this.byId(id);
+      if (!book) throw new Error('Dieses Buch gibt es nicht.');
+      if (book.place === 'wish') return;
+
+      // Ein verliehenes Buch besitzt man ja offensichtlich — das zurück auf
+      // die Wunschliste zu schieben wäre widersprüchlich.
+      if (useLoansStore().openLoanOf(id)) {
+        throw new Error('Das Buch ist gerade ausgeliehen. Erst zurückbuchen, dann verschieben.');
+      }
+
+      await this.update(id, { place: 'wish', shelvedAt: null, ownerId: null });
+    },
+
     resetFilter() {
       this.filter = { ...EMPTY_FILTER };
+    },
+
+    resetWishFilter() {
+      this.wishFilter = { ...EMPTY_FILTER };
     },
   },
 });

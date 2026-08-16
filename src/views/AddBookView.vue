@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, useTemplateRef } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import BookCover from '@/components/BookCover.vue';
 import { useBarcodeScanner } from '@/composables/useBarcodeScanner';
 import { useToast } from '@/composables/useToast';
@@ -15,9 +15,16 @@ import {
 import { decodeImageFile } from '@/services/barcodeDecoder';
 import { mapCategories } from '@/services/genreMapping';
 import { parseSeries } from '@/services/seriesParser';
-import { isBookBarcode, isValidIsbn, splitIsbn } from '@/services/isbn';
-import { BOOK_STATUSES, SOURCE_LABEL, STATUS_LABEL, type BookStatus } from '@/types';
+import { isBookBarcode, isValidIsbn, splitIsbn, toIsbn13 } from '@/services/isbn';
+import {
+  BOOK_STATUSES,
+  SOURCE_LABEL,
+  STATUS_LABEL,
+  type BookPlace,
+  type BookStatus,
+} from '@/types';
 
+const route = useRoute();
 const router = useRouter();
 const books = useBooksStore();
 const genres = useGenresStore();
@@ -34,6 +41,14 @@ const statusLine = ref('');
 const suggestedGenres = ref<string[]>([]);
 const showDiagnostics = ref(false);
 
+/**
+ * Vorbelegung aus dem Scan-Knopf: aus dem Regal heraus landet das Buch im
+ * Regal, aus der Wunschliste heraus auf der Wunschliste. Bleibt über mehrere
+ * Erfassungen hinweg stehen, damit man eine ganze Wunschliste am Stück
+ * scannen kann.
+ */
+const targetPlace = ref<BookPlace>(route.query.wunsch === '1' ? 'wish' : 'shelf');
+
 const form = ref({
   open: false,
   title: '',
@@ -48,12 +63,22 @@ const form = ref({
   coverDataUrl: null as string | null,
   status: 'unread' as BookStatus,
   ownerId: null as number | null,
+  place: 'shelf' as BookPlace,
   seriesName: '',
   seriesIndex: '',
   genreIds: [] as number[],
 });
 
-const duplicate = computed(() => books.byIsbn13(form.value.isbn13));
+/**
+ * Greift schon beim Tippen und direkt nach dem Scan, nicht erst nach dem
+ * Netzabruf — die ISBN kennen wir sofort, also kann die Meldung sofort kommen
+ * statt nach zwei Sekunden Wartezeit.
+ */
+const duplicate = computed(() => {
+  const typed = isbnInput.value.trim();
+  const candidate = form.value.isbn13 ?? (isValidIsbn(typed) ? toIsbn13(typed) : null);
+  return books.byIsbn13(candidate);
+});
 
 /* ---------------- Kamera ---------------- */
 
@@ -169,6 +194,7 @@ async function search() {
       coverDataUrl: null,
       status: 'unread',
       ownerId: owners.defaultOwnerId,
+      place: targetPlace.value,
       seriesName: series?.seriesName ?? '',
       seriesIndex: series ? String(series.seriesIndex) : '',
       genreIds: mapping.matched
@@ -213,6 +239,7 @@ function prefillManual(raw?: string) {
     coverDataUrl: null,
     status: 'unread',
     ownerId: owners.defaultOwnerId,
+    place: targetPlace.value,
     seriesName: '',
     seriesIndex: '',
     genreIds: [],
@@ -252,6 +279,7 @@ async function save(openAfterwards: boolean) {
       coverDataUrl: form.value.coverDataUrl,
       status: form.value.status,
       ownerId: form.value.ownerId,
+      place: form.value.place,
       genreIds: form.value.genreIds,
     });
 
@@ -263,17 +291,27 @@ async function save(openAfterwards: boolean) {
       );
     }
 
+    const wasWish = form.value.place === 'wish';
     reset();
     if (openAfterwards) {
       await router.push(`/buch/${book.id}`);
     } else {
-      show(`"${book.title}" steht jetzt im Regal`);
+      show(
+        wasWish
+          ? `"${book.title}" steht auf deiner Wunschliste`
+          : `"${book.title}" steht jetzt im Regal`,
+      );
     }
   } catch (error) {
     showError(error);
   } finally {
     busy.value = false;
   }
+}
+
+function setTarget(place: BookPlace) {
+  targetPlace.value = place;
+  if (form.value.open) form.value.place = place;
 }
 
 function reset() {
@@ -286,6 +324,46 @@ function reset() {
 
 <template>
   <div class="px-4 pb-8 pt-3">
+    <!-- Steht ganz oben, damit vor dem Scannen klar ist, wo das Buch landet. -->
+    <div class="mb-3">
+      <span class="label">Wohin damit?</span>
+      <div class="flex gap-1 rounded-xl bg-surface2 p-1">
+        <button
+          type="button"
+          class="flex-1 rounded-lg py-2 text-[13px] font-semibold transition"
+          :class="targetPlace === 'shelf' ? 'bg-surface shadow-sm' : 'text-muted'"
+          @click="setTarget('shelf')"
+        >
+          📚 Ins Regal
+        </button>
+        <button
+          type="button"
+          class="flex-1 rounded-lg py-2 text-[13px] font-semibold transition"
+          :class="targetPlace === 'wish' ? 'bg-surface text-accent shadow-sm' : 'text-muted'"
+          @click="setTarget('wish')"
+        >
+          ⭐ Auf die Wunschliste
+        </button>
+      </div>
+    </div>
+
+    <!-- Sobald die ISBN bekannt ist, also direkt nach dem Scan und noch vor
+         dem Netzabruf. Anklickbar, sonst wüsste man von dem Fund und käme
+         trotzdem nicht hin. -->
+    <router-link
+      v-if="duplicate"
+      :to="`/buch/${duplicate.id}`"
+      class="mb-3 flex items-start gap-2 rounded-xl border border-accent bg-accent-soft p-3 text-xs"
+    >
+      <span aria-hidden="true">💡</span>
+      <span class="flex-1">
+        <b>„{{ duplicate.title }}"</b>
+        {{ duplicate.place === 'wish' ? 'steht schon auf deiner Wunschliste.' : 'steht schon in deinem Regal.' }}
+        Antippen zum Anschauen — anlegen kannst du es trotzdem.
+      </span>
+      <span class="text-muted" aria-hidden="true">›</span>
+    </router-link>
+
     <!-- Kamera -->
     <div class="relative mb-3 aspect-[4/3] overflow-hidden rounded-2xl bg-black">
       <video
@@ -451,11 +529,6 @@ function reset() {
 
     <!-- Formular -->
     <div v-if="form.open" class="mt-6 border-t border-line pt-5">
-      <div v-if="duplicate" class="mb-4 rounded-xl bg-overdue/10 p-3 text-xs text-overdue">
-        <b>„{{ duplicate.title }}" steht schon im Regal.</b>
-        Wenn du es doppelt hast, kannst du es trotzdem anlegen.
-      </div>
-
       <div class="mb-4 flex gap-3.5">
         <BookCover :title="form.title || '?'" :src="form.coverDataUrl" size="lg" />
         <div class="min-w-0 flex-1 space-y-2">
@@ -507,44 +580,48 @@ function reset() {
         </div>
       </div>
 
-      <div class="mb-4">
-        <span class="label">Status</span>
-        <div class="flex gap-1 rounded-xl bg-surface2 p-1">
-          <button
-            v-for="status in BOOK_STATUSES"
-            :key="status"
-            type="button"
-            class="flex-1 rounded-lg py-2 text-[13px] font-semibold transition"
-            :class="form.status === status ? 'bg-surface shadow-sm' : 'text-muted'"
-            @click="form.status = status"
-          >
-            {{ STATUS_LABEL[status] }}
-          </button>
+      <!-- Ein Wunsch hat weder Lesestatus noch Besitzer — man hat das Buch ja
+           noch nicht. Beides taucht auf, sobald es ins Regal wandert. -->
+      <template v-if="form.place === 'shelf'">
+        <div class="mb-4">
+          <span class="label">Status</span>
+          <div class="flex gap-1 rounded-xl bg-surface2 p-1">
+            <button
+              v-for="status in BOOK_STATUSES"
+              :key="status"
+              type="button"
+              class="flex-1 rounded-lg py-2 text-[13px] font-semibold transition"
+              :class="form.status === status ? 'bg-surface shadow-sm' : 'text-muted'"
+              @click="form.status = status"
+            >
+              {{ STATUS_LABEL[status] }}
+            </button>
+          </div>
         </div>
-      </div>
 
-      <div class="mb-5">
-        <span class="label">Gehört</span>
-        <div class="flex gap-1 rounded-xl bg-surface2 p-1">
-          <button
-            v-for="owner in owners.owners"
-            :key="owner.id"
-            type="button"
-            class="flex-1 rounded-lg py-2 text-[13px] font-semibold transition"
-            :class="form.ownerId === owner.id ? 'bg-surface shadow-sm' : 'text-muted'"
-            @click="form.ownerId = owner.id"
-          >
-            {{ owner.name }}
-          </button>
+        <div class="mb-5">
+          <span class="label">Gehört</span>
+          <div class="flex gap-1 rounded-xl bg-surface2 p-1">
+            <button
+              v-for="owner in owners.owners"
+              :key="owner.id"
+              type="button"
+              class="flex-1 rounded-lg py-2 text-[13px] font-semibold transition"
+              :class="form.ownerId === owner.id ? 'bg-surface shadow-sm' : 'text-muted'"
+              @click="form.ownerId = owner.id"
+            >
+              {{ owner.name }}
+            </button>
+          </div>
         </div>
-      </div>
+      </template>
 
       <div class="flex flex-col gap-2">
         <button type="button" class="btn-primary w-full" :disabled="busy || !form.title.trim()" @click="save(false)">
-          Ins Regal stellen und weiter scannen
+          {{ form.place === 'wish' ? 'Auf die Wunschliste und weiter scannen' : 'Ins Regal stellen und weiter scannen' }}
         </button>
         <button type="button" class="btn-ghost w-full" :disabled="busy || !form.title.trim()" @click="save(true)">
-          Ins Regal stellen und öffnen
+          {{ form.place === 'wish' ? 'Auf die Wunschliste und öffnen' : 'Ins Regal stellen und öffnen' }}
         </button>
         <button type="button" class="btn-danger w-full" @click="reset">Verwerfen</button>
       </div>

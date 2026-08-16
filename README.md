@@ -18,6 +18,9 @@ haben, verlassen das Handy nie. Es gibt keinen Server, kein Konto und keine Sync
 - Verliehen und geliehen mit Person, Datum und Rückgabetermin; Überfälliges wird hervorgehoben, die Historie
   bleibt erhalten.
 - Suchen über Titel, Autor, Reihe und Notizen. Sechs Sortierungen, sechs kombinierbare Filter.
+- **Wunschliste** in einem eigenen Tab: Bücher draufscannen, „hab ich bekommen" schiebt sie ins Regal, und
+  die Liste lässt sich als PDF verschicken — mit ISBN, damit derjenige die richtige Ausgabe findet. Beim
+  Scannen meldet die App, wenn ein Buch schon im Regal oder schon auf der Wunschliste steht.
 - Export als PDF und XLSX, Backup als JSON. Alles läuft im Browser, es geht nichts an einen Dienst raus.
 
 ## Entwickeln
@@ -71,8 +74,8 @@ src/
 │                Genre-Zuordnung, Filter, Buchsuche, Export
 ├── stores/      Pinia — Komponenten sprechen nur hierüber mit der Datenbank
 ├── components/  Wiederverwendete Bausteine
-├── views/       Die fünf Bildschirme
-└── __tests__/   Vitest, 137 Tests über Datenschicht, Services und Stores
+├── views/       Die Bildschirme
+└── __tests__/   Vitest, 168 Tests über Datenschicht, Services und Stores
 ```
 
 Komponenten importieren `db` nicht direkt. Sonst laufen Pinia-State und Datenbank auseinander, und die Liste

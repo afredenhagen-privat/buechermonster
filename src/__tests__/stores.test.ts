@@ -134,7 +134,7 @@ describe('genresStore', () => {
     await books.create({ title: 'A', genreIds: [fantasy.id] });
     await books.create({ title: 'B', genreIds: [fantasy.id] });
 
-    expect(genres.bookCountOf(fantasy.id)).toBe(2);
+    expect(genres.linkCountOf(fantasy.id)).toBe(2);
   });
 });
 
@@ -408,7 +408,105 @@ describe('booksStore', () => {
     await books.create({ title: 'B', status: 'reading' });
     await books.create({ title: 'C' });
 
-    expect(books.stats).toEqual({ total: 3, unread: 1, reading: 1, read: 1 });
+    expect(books.stats).toEqual({ total: 3, unread: 1, reading: 1, read: 1, wishes: 0 });
+  });
+});
+
+describe('Wunschliste', () => {
+  it('legt einen Wunsch ohne Besitzer und ohne Regal-Zeitpunkt an', async () => {
+    const books = useBooksStore();
+    const wish = await books.create({ title: 'Der Schwarm', place: 'wish' });
+
+    expect(wish.place).toBe('wish');
+    expect(wish.ownerId).toBeNull();
+    expect(wish.shelvedAt).toBeNull();
+  });
+
+  it('hält Wünsche aus dem Regal heraus, überall', async () => {
+    // Das ist die eigentliche Gefahr an einem Feld statt einer zweiten
+    // Tabelle: ein Wunsch, der irgendwo als Bestand mitgezählt wird.
+    const books = useBooksStore();
+    const genres = useGenresStore();
+    const owners = useOwnersStore();
+    const fantasy = genres.byName('Fantasy')!;
+
+    await books.create({ title: 'Im Regal', genreIds: [fantasy.id] });
+    await books.create({ title: 'Nur gewünscht', place: 'wish', genreIds: [fantasy.id] });
+
+    expect(books.shelfBooks.map((b) => b.title)).toEqual(['Im Regal']);
+    expect(books.wishBooks.map((b) => b.title)).toEqual(['Nur gewünscht']);
+    expect(books.visibleBooks.map((b) => b.title)).toEqual(['Im Regal']);
+    expect(books.visibleWishes.map((b) => b.title)).toEqual(['Nur gewünscht']);
+    expect(books.stats.total).toBe(1);
+    expect(books.stats.wishes).toBe(1);
+    expect(books.booksOfOwner(owners.defaultOwnerId!)).toBe(1);
+    expect(books.shelfCountOfGenre(fantasy.id)).toBe(1);
+  });
+
+  it('sucht die ISBN bewusst überall, damit die Dublettenmeldung greift', async () => {
+    const books = useBooksStore();
+    await books.create({ title: 'Nur gewünscht', place: 'wish', isbn13: '9783791504650' });
+
+    expect(books.byIsbn13('9783791504650')?.place).toBe('wish');
+  });
+
+  it('stellt einen bekommenen Wunsch ins Regal', async () => {
+    const books = useBooksStore();
+    const owners = useOwnersStore();
+    const wish = await books.create({ title: 'Der Schwarm', place: 'wish' });
+
+    await books.moveToShelf(wish.id);
+
+    const book = books.byId(wish.id)!;
+    expect(book.place).toBe('shelf');
+    expect(book.ownerId).toBe(owners.defaultOwnerId);
+    expect(book.shelvedAt).not.toBeNull();
+    expect(books.visibleBooks.map((b) => b.title)).toEqual(['Der Schwarm']);
+    expect((await db.books.get(wish.id))?.place).toBe('shelf');
+  });
+
+  it('schiebt ein Regalbuch als Korrektur zurück auf die Wunschliste', async () => {
+    const books = useBooksStore();
+    const book = await books.create({ title: 'Versehentlich erfasst' });
+
+    await books.moveToWishlist(book.id);
+
+    expect(books.byId(book.id)?.place).toBe('wish');
+    expect(books.byId(book.id)?.ownerId).toBeNull();
+    expect(books.byId(book.id)?.shelvedAt).toBeNull();
+  });
+
+  it('schiebt kein ausgeliehenes Buch auf die Wunschliste', async () => {
+    const books = useBooksStore();
+    const loans = useLoansStore();
+    const book = await books.create({ title: 'Verliehen' });
+    await loans.lend({ bookId: book.id, direction: 'out', personName: 'Jonas' });
+
+    await expect(books.moveToWishlist(book.id)).rejects.toThrow(/ausgeliehen/);
+    expect(books.byId(book.id)?.place).toBe('shelf');
+  });
+
+  it('tut nichts, wenn das Buch schon am Ziel ist', async () => {
+    const books = useBooksStore();
+    const book = await books.create({ title: 'Schon da' });
+    const vorher = books.byId(book.id)!.shelvedAt;
+
+    await books.moveToShelf(book.id);
+    expect(books.byId(book.id)?.shelvedAt).toBe(vorher);
+  });
+
+  it('trennt Suche und Sortierung von Regal und Wunschliste', async () => {
+    const books = useBooksStore();
+    await books.create({ title: 'Regalbuch' });
+    await books.create({ title: 'Wunschbuch', place: 'wish' });
+
+    books.filter.query = 'Regal';
+    expect(books.visibleBooks).toHaveLength(1);
+    expect(books.visibleWishes).toHaveLength(1);
+
+    books.wishFilter.query = 'gibtsnicht';
+    expect(books.visibleWishes).toHaveLength(0);
+    expect(books.visibleBooks).toHaveLength(1);
   });
 });
 

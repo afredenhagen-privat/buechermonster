@@ -23,6 +23,13 @@ const { show, showError } = useToast();
 const bookId = computed(() => Number(props.id));
 const book = computed(() => books.byId(bookId.value));
 
+/**
+ * Ein Wunsch bekommt eine reduzierte Ansicht: Lesestatus, Bewertung, Besitzer
+ * und Ausleihe fehlen, weil man das Buch gar nicht hat. Wären sie da, wären
+ * es Schalter, die nichts bewirken.
+ */
+const isWish = computed(() => book.value?.place === 'wish');
+
 const STATUS_CLASS = {
   unread: 'text-unread',
   reading: 'text-reading',
@@ -217,13 +224,35 @@ async function toggleGenre(genreId: number) {
   await act(() => genres.setBookGenres(book.value!.id, next));
 }
 
+async function receiveWish() {
+  if (!book.value) return;
+  await act(async () => {
+    await books.moveToShelf(book.value!.id);
+    show(`"${book.value!.title}" steht jetzt im Regal`);
+  });
+}
+
+async function backToWishlist() {
+  if (!book.value) return;
+  if (!window.confirm(`"${book.value.title}" zurück auf die Wunschliste legen?`)) return;
+  await act(async () => {
+    await books.moveToWishlist(book.value!.id);
+    show('Zurück auf der Wunschliste');
+  });
+}
+
 async function removeBook() {
   if (!book.value) return;
-  if (!window.confirm(`"${book.value.title}" wirklich aus dem Regal löschen?`)) return;
+  const wish = isWish.value;
+  const question = wish
+    ? `"${book.value.title}" von der Wunschliste nehmen?`
+    : `"${book.value.title}" wirklich aus dem Regal löschen?`;
+  if (!window.confirm(question)) return;
+
   await act(async () => {
     await books.remove(book.value!.id);
-    await router.push('/');
-    show('Buch gelöscht');
+    await router.push(wish ? '/wuensche' : '/');
+    show(wish ? 'Von der Wunschliste genommen' : 'Buch gelöscht');
   });
 }
 </script>
@@ -295,7 +324,17 @@ async function removeBook() {
       </p>
     </section>
 
-    <section class="mb-5">
+    <!-- Der wichtigste Weg eines Wunsches, deshalb direkt unter den Buchdaten. -->
+    <section v-if="isWish" class="mb-5 rounded-xl border border-accent bg-accent-soft p-3">
+      <p class="mb-2.5 text-xs text-muted">
+        Steht auf deiner Wunschliste. Sobald du es hast, wandert es mit einem Tipp ins Regal.
+      </p>
+      <button type="button" class="btn-primary w-full" @click="receiveWish">
+        ⭐ Hab ich bekommen
+      </button>
+    </section>
+
+    <section v-if="!isWish" class="mb-5">
       <span class="label">Status</span>
       <div class="flex gap-1 rounded-xl bg-surface2 p-1">
         <button
@@ -314,7 +353,7 @@ async function removeBook() {
       </p>
     </section>
 
-    <section class="mb-5">
+    <section v-if="!isWish" class="mb-5">
       <span class="label">Bewertung</span>
       <StarRating
         :rating="book.rating"
@@ -364,7 +403,7 @@ async function removeBook() {
       </datalist>
     </section>
 
-    <section class="mb-5">
+    <section v-if="!isWish" class="mb-5">
       <span class="label">Gehört</span>
       <div class="flex gap-1 rounded-xl bg-surface2 p-1">
         <button
@@ -380,7 +419,7 @@ async function removeBook() {
       </div>
     </section>
 
-    <section class="mb-5">
+    <section v-if="!isWish" class="mb-5">
       <span class="label">Ausleihe</span>
 
       <div
@@ -429,9 +468,15 @@ async function removeBook() {
       />
     </section>
 
-    <button type="button" class="btn-danger w-full" @click="removeBook">
-      Buch aus dem Regal löschen
-    </button>
+    <div class="flex flex-col gap-2">
+      <!-- Korrekturweg, wenn beim Erfassen der Schalter falsch stand. -->
+      <button v-if="!isWish" type="button" class="btn-ghost w-full" @click="backToWishlist">
+        ⭐ Zurück auf die Wunschliste
+      </button>
+      <button type="button" class="btn-danger w-full" @click="removeBook">
+        {{ isWish ? 'Von der Wunschliste nehmen' : 'Buch aus dem Regal löschen' }}
+      </button>
+    </div>
 
     <BottomSheet
       v-model="showLendSheet"

@@ -28,6 +28,28 @@ db.version(1).stores({
   settings: '&key',
 });
 
+/*
+  Version 2 bringt die Wunschliste. Nur die geänderte Tabelle wird genannt,
+  die übrigen übernimmt Dexie unverändert.
+
+  Das Upgrade ist zwingend: ohne gesetztes `place` wäre ein bestehendes Buch
+  weder im Regal noch auf der Wunschliste und damit unsichtbar.
+*/
+db.version(2)
+  .stores({
+    books:
+      '++id, titleSort, authorSort, *authors, place, status, rating, seriesId, ownerId, isbn13, addedAt, shelvedAt',
+  })
+  .upgrade(async (tx) => {
+    await tx
+      .table('books')
+      .toCollection()
+      .modify((book: Partial<Book>) => {
+        book.place = 'shelf';
+        book.shelvedAt = book.addedAt ?? null;
+      });
+  });
+
 export async function initDatabase(): Promise<BuechermonsterDB> {
   if (!db.isOpen()) await db.open();
   return db;

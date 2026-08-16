@@ -47,7 +47,13 @@ export const useGenresStore = defineStore('genres', {
           .sort((a, b) => compareGerman(a.name, b.name));
     },
 
-    bookCountOf:
+    /**
+     * Alle Verknüpfungen, Regal und Wunschliste zusammen. Gedacht für die
+     * Rückfrage vor dem Löschen — dort zählt, wie viele Einträge insgesamt
+     * das Genre verlieren. Für die Anzeige des Bestands gibt es
+     * `booksStore.shelfCountOfGenre`, das Wünsche weglässt.
+     */
+    linkCountOf:
       (state) =>
       (genreId: number): number =>
         state.links.filter((l) => l.genreId === genreId).length,

@@ -16,7 +16,14 @@ const STORES = [
 
 type StoreName = (typeof STORES)[number];
 
-export const BACKUP_VERSION = 1;
+export const BACKUP_VERSION = 2;
+
+/**
+ * Ältere Stände werden angenommen und beim Import ergänzt, nicht abgelehnt.
+ * Ein Backup ist die letzte Rettung — es darf nicht daran scheitern, dass die
+ * App seither ein Feld dazubekommen hat.
+ */
+const SUPPORTED_VERSIONS = [1, 2];
 
 export interface BackupPayload {
   app: 'buechermonster';
@@ -52,9 +59,9 @@ export async function importBackup(payload: unknown): Promise<void> {
   if (!p || typeof p !== 'object') {
     throw new Error('Das ist keine gültige Backup-Datei.');
   }
-  if (p.version !== BACKUP_VERSION) {
+  if (typeof p.version !== 'number' || !SUPPORTED_VERSIONS.includes(p.version)) {
     throw new Error(
-      `Backup-Version ${String(p.version)} wird nicht unterstützt, erwartet wird ${BACKUP_VERSION}.`,
+      `Backup-Version ${String(p.version)} wird nicht unterstützt, erwartet wird ${SUPPORTED_VERSIONS.join(' oder ')}.`,
     );
   }
   for (const name of STORES) {
@@ -63,7 +70,7 @@ export async function importBackup(payload: unknown): Promise<void> {
     }
   }
 
-  const data = p.data as Record<StoreName, unknown[]>;
+  const data = migrate(p.data as Record<StoreName, unknown[]>, p.version);
 
   await clearAllData();
   await db.transaction('rw', db.tables, async () => {
@@ -72,6 +79,32 @@ export async function importBackup(payload: unknown): Promise<void> {
       if (rows.length > 0) await db.table(name).bulkAdd(rows);
     }
   });
+}
+
+/**
+ * Hebt einen älteren Datenbestand auf den aktuellen Stand.
+ *
+ * Version 1 kannte die Wunschliste noch nicht. Ohne `place` wäre jedes Buch
+ * aus so einer Datei nach dem Import weder im Regal noch auf der Wunschliste
+ * und damit spurlos verschwunden — obwohl es in der Datenbank steht.
+ */
+function migrate(
+  data: Record<StoreName, unknown[]>,
+  version: number,
+): Record<StoreName, unknown[]> {
+  if (version >= 2) return data;
+
+  return {
+    ...data,
+    books: data.books.map((row) => {
+      const book = row as Record<string, unknown>;
+      return {
+        ...book,
+        place: book.place ?? 'shelf',
+        shelvedAt: book.shelvedAt ?? book.addedAt ?? null,
+      };
+    }),
+  };
 }
 
 export function buildBackupFilename(now = new Date()): string {

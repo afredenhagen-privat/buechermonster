@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router';
 import ShelfView from './views/ShelfView.vue';
 import BookDetailView from './views/BookDetailView.vue';
 import AddBookView from './views/AddBookView.vue';
+import WishlistView from './views/WishlistView.vue';
 import LoansView from './views/LoansView.vue';
 import SettingsView from './views/SettingsView.vue';
 
@@ -13,6 +14,7 @@ export default createRouter({
     { path: '/', name: 'shelf', component: ShelfView },
     { path: '/buch/:id', name: 'book', component: BookDetailView, props: true },
     { path: '/hinzufuegen', name: 'add', component: AddBookView },
+    { path: '/wuensche', name: 'wishlist', component: WishlistView },
     { path: '/ausleihen', name: 'loans', component: LoansView },
     { path: '/einstellungen', name: 'settings', component: SettingsView },
     { path: '/:pathMatch(.*)*', redirect: '/' },

@@ -33,7 +33,8 @@ const exportCount = computed(() =>
 );
 
 function rowsForExport() {
-  const source = exportAll.value ? books.books : books.visibleBooks;
+  // Der Regal-Export nimmt nie Wünsche mit — die haben ihren eigenen Knopf.
+  const source = exportAll.value ? books.shelfBooks : books.visibleBooks;
   return buildExportRows(source, {
     genreNamesOf: (id) => genres.genresOf(id).map((g) => g.name),
     seriesNameOf: (id) => series.nameOf(id),
@@ -139,7 +140,8 @@ async function saveGenre() {
 async function removeGenre() {
   const genre = genreSheet.value.genre;
   if (!genre) return;
-  const count = genres.bookCountOf(genre.id);
+  // Hier zählen Wünsche mit: auch sie verlieren das Genre.
+  const count = genres.linkCountOf(genre.id);
   const question = count
     ? `"${genre.name}" löschen? Bei ${pluralBooks(count)} fällt das Genre dann weg.`
     : `"${genre.name}" löschen?`;
@@ -258,7 +260,7 @@ async function removeOwner() {
       >
         <span class="h-3 w-3 shrink-0 rounded" :style="{ background: genre.color }" aria-hidden="true" />
         <span class="flex-1">{{ genre.name }}</span>
-        <span class="text-xs text-muted">{{ genres.bookCountOf(genre.id) }}</span>
+        <span class="text-xs text-muted">{{ books.shelfCountOfGenre(genre.id) }}</span>
       </button>
 
       <button type="button" class="btn-ghost btn-sm mt-3" @click="editGenre(null)">+ Genre</button>

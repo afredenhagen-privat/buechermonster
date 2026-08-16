@@ -109,8 +109,14 @@ describe('buildExportRows', () => {
 
 describe('buildExportFilename', () => {
   it('setzt Datum und Endung zusammen', () => {
-    expect(buildExportFilename('pdf', new Date('2026-03-07T12:00:00'))).toBe(
+    expect(buildExportFilename('pdf', 'buecherregal', new Date('2026-03-07T12:00:00'))).toBe(
       'buecherregal-2026-03-07.pdf',
+    );
+  });
+
+  it('unterscheidet Regal und Wunschliste am Dateinamen', () => {
+    expect(buildExportFilename('pdf', 'wunschliste', new Date('2026-03-07T12:00:00'))).toBe(
+      'wunschliste-2026-03-07.pdf',
     );
   });
 });

@@ -70,11 +70,64 @@ describe('exportBackup / importBackup', () => {
   it('trägt Kennung und Version im Payload', async () => {
     const backup = await exportBackup();
     expect(backup.app).toBe('buechermonster');
-    expect(backup.version).toBe(1);
+    expect(backup.version).toBe(2);
   });
 
   it('lehnt eine unbekannte Version ab', async () => {
     await expect(importBackup({ version: 99, data: {} })).rejects.toThrow(/Version/);
+  });
+
+  it('nimmt ein Backup aus der Zeit vor der Wunschliste an', async () => {
+    // Version 1 kannte weder place noch shelvedAt. Ohne Ergänzung wären die
+    // Bücher nach dem Import weder im Regal noch auf der Wunschliste — also
+    // in der Datenbank vorhanden, aber nirgends sichtbar.
+    const alt = {
+      app: 'buechermonster',
+      version: 1,
+      exportedAt: '2026-08-15T12:00:00.000Z',
+      data: {
+        books: [
+          {
+            id: 1,
+            title: 'Tintenherz',
+            subtitle: null,
+            titleSort: 'tintenherz',
+            authors: ['Cornelia Funke'],
+            authorSort: 'funke, cornelia',
+            isbn13: '9783791504650',
+            isbn10: null,
+            publisher: 'Dressler',
+            publishedYear: 2003,
+            pageCount: 573,
+            language: 'de',
+            coverDataUrl: null,
+            status: 'read',
+            rating: 5,
+            ownerId: 1,
+            seriesId: null,
+            seriesIndex: null,
+            notes: 'Trägt bis heute.',
+            addedAt: '2026-03-01T09:00:00.000Z',
+            updatedAt: '2026-03-01T09:00:00.000Z',
+            finishedAt: '2026-04-01T09:00:00.000Z',
+          },
+        ],
+        genres: [],
+        book_genres: [],
+        series: [],
+        owners: [{ id: 1, name: 'Mir', isDefault: true }],
+        loans: [],
+        settings: [],
+      },
+    };
+
+    await importBackup(alt);
+
+    const book = await db.books.get(1);
+    expect(book?.place).toBe('shelf');
+    expect(book?.shelvedAt).toBe('2026-03-01T09:00:00.000Z');
+    expect(book?.title).toBe('Tintenherz');
+    expect(book?.notes).toBe('Trägt bis heute.');
   });
 
   it('lehnt ein Backup mit fehlendem Bereich ab', async () => {

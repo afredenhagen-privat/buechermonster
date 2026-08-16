@@ -6,7 +6,7 @@ let counter = 0;
 export function makeBook(overrides: Partial<Book> = {}): Omit<Book, 'id'> {
   counter += 1;
   const title = overrides.title ?? `Testbuch ${counter}`;
-  return {
+  const base: Omit<Book, 'id'> = {
     title,
     subtitle: null,
     titleSort: title.toLocaleLowerCase('de'),
@@ -19,6 +19,7 @@ export function makeBook(overrides: Partial<Book> = {}): Omit<Book, 'id'> {
     pageCount: null,
     language: 'de',
     coverDataUrl: null,
+    place: 'shelf',
     status: 'unread',
     rating: 0,
     ownerId: null,
@@ -26,10 +27,19 @@ export function makeBook(overrides: Partial<Book> = {}): Omit<Book, 'id'> {
     seriesIndex: null,
     notes: '',
     addedAt: '2026-08-15T10:00:00.000Z',
+    shelvedAt: '2026-08-15T10:00:00.000Z',
     updatedAt: '2026-08-15T10:00:00.000Z',
     finishedAt: null,
     ...overrides,
   };
+
+  // Ein Regalbuch kam dann ins Regal, als es angelegt wurde — sonst hätten
+  // alle Testbücher denselben Zeitstempel und die Sortierung "zuletzt
+  // hinzugefügt" wäre nicht prüfbar. Ein Wunsch steht noch nicht im Regal.
+  if (overrides.shelvedAt === undefined) {
+    base.shelvedAt = base.place === 'wish' ? null : base.addedAt;
+  }
+  return base;
 }
 
 export function makeLoan(overrides: Partial<Loan> = {}): Omit<Loan, 'id'> {
